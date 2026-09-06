@@ -14,7 +14,7 @@ npm.cmd run package:win
 
 ## 首次部署
 
-1. 在无 Node、Python、Office 的 Windows 11 x64 验收机安装。
+1. 在无 Node、Python、Office 的 Windows 10/11 x64 验收机安装。
 2. 断网启动，导入客户最新排班和成员信息。
 3. 按需求 01-28 执行真实验收并记录耗时、系统版本和缩放比例。
 4. 完成一次手动备份、一次恢复和一次安装包卸载重装验证。

@@ -1,10 +1,10 @@
 # 网络服务小组签到与月报
 
-> 面向 **Windows 11 共用电脑** 的 **离线** Electron 桌面应用。日常选择实际到场人员签到；月底在同一个工作区核对工时、填写文字与评分，一次导出五类正式文件。不依赖 Node.js、Python、Office 或任何网络环境。
+> 面向 **Windows 10/11 共用电脑** 的 **离线** Electron 桌面应用。日常选择实际到场人员签到；月底在同一个工作区核对工时、填写文字与评分，一次导出五类正式文件。不依赖 Node.js、Python、Office 或任何网络环境。
 
 ```
-平台     Windows 11 x64（NSIS 安装包）        运行时    Electron + React + TypeScript
-本地存储  SQLite                             版本      0.3.0
+平台     Windows 10/11 x64（NSIS 安装包）        运行时    Electron + React + TypeScript
+本地存储  SQLite                             版本      0.4.0
 协议     MIT 开源
 ```
 
@@ -41,8 +41,8 @@
 
 | 用途 | 要求 |
 | --- | --- |
-| **日常使用（安装版用户）** | Windows 11 x64；无需 Node.js / Python / Office / 网络 |
-| **开发与构建** | Node.js `≥ 24.18.0`、npm；建议 Windows 11 x64 |
+| **日常使用（安装版用户）** | Windows 10/11 x64；无需 Node.js / Python / Office / 网络 |
+| **开发与构建** | Node.js `≥ 24.18.0`、npm；建议 Windows 10/11 x64 |
 
 ---
 
@@ -200,20 +200,47 @@ output/                程序与脚本导出的文件（git 忽略）
 
 ## 版本与发布
 
-版本遵循 **语义化版本**（`0.3.0` 起步）。发布流程：
+版本遵循 **语义化版本**；当前为 `0.4.0`。发布流程：
 
 1. `npm.cmd run verify` 通过全部门禁。
 2. `npm.cmd run package:win` 生成 x64 NSIS 安装包。
 3. 打标签并推送：
 
    ```powershell
-   git tag -a v0.3.0 -m "v0.3.0"
-   git push origin v0.3.0
+   git tag -a v0.4.0 -m "v0.4.0"
+   git push origin v0.4.0
    ```
 
 4. 在 GitHub 仓库的 **Releases** 页基于该标签新建发布，附上变更说明与安装包（`.exe`、`.blockmap`），可选附带手册 PDF。
 
 > 完整的发布页与附件指引见 [Release 发布指南](#release-发布指南)。
+
+---
+
+## Release 发布指南
+
+发布新版本（以当前 `0.4.0` 为例）：
+
+1. **门禁**：`npm.cmd run verify`（typecheck + test + build）全通过。
+2. **打包**：`npm.cmd run package:win` 生成 `apps/desktop/release/网络服务小组签到与月报-<版本>-x64.exe` 与对应的 `.blockmap`。
+3. **打标签并推送**：
+
+   ```powershell
+   git tag -a v0.4.0 -m "v0.4.0"
+   git push origin v0.4.0
+   ```
+
+4. **建 Release**：在 [Releases](https://github.com/diego20050818/network-service-checkin/releases) 页基于该标签新建发布，标题用版本号 `v0.4.0`，正文引用 `CHANGELOG.md` 对应条目；附件至少带上 `.exe` 与 `.blockmap`，可选附 `output/pdf/网络服务小组功能手册与操作指南_<版本>.pdf`。
+
+命令行方式（已登录 `gh`）：
+
+```powershell
+gh release create v0.4.0 -t "v0.4.0" -n "见 CHANGELOG.md" `
+  "apps/desktop/release/网络服务小组签到与月报-0.4.0-x64.exe" `
+  "apps/desktop/release/网络服务小组签到与月报-0.4.0-x64.exe.blockmap"
+```
+
+> 提醒：当前安装包为 `NotSigned` 且尚未在洁净目标机实测。正式分发前建议使用组织证书签名并在 Windows 10/11 实机验证；否则用户安装时可能遇到 SmartScreen 警告。
 
 ---
 
