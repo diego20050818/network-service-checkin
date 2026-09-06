@@ -48,7 +48,7 @@
 
 ## 快速开始（安装版用户）
 
-1. 从 **[Releases](https://github.com/<your-github-username>/network-service-checkin/releases)** 下载最新 `网络服务小组签到与月报-<版本>-x64.exe`。
+1. 从 **[Releases](https://github.com/diego20050818/network-service-checkin/releases)** 下载最新 `网络服务小组签到与月报-<版本>-x64.exe`。
 2. 双击安装；安装时可选安装目录、是否创建桌面与开始菜单快捷方式。
 3. **首次使用**：进入「排班与成员」页，下载随包提供的空白排班模板与人员信息模板，填写后导入正式排班和成员资料（应用会留存源文件副本）。
 4. **每天**：打开软件，在「签到」首页勾选实际到场人员并签到即可。
