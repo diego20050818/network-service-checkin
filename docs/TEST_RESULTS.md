@@ -22,7 +22,7 @@
 
 构建环境为 Node.js 24.18.0、npm 11.16.0、Electron 44.2.0。Windows x64 NSIS 安装包：
 
-- 文件：`apps/desktop/release/网络服务小组签到与月报-0.4.0-x64.exe`
+- 文件：`apps/desktop/release/network-service-checkin-0.4.0-x64.exe`
 - 大小：119,067,851 字节
 - SHA-256：`10244BC388C77B23C1F464B460F26A5B7086F939328AEC62CEBF8B7107A37203`
 - Authenticode：`NotSigned`

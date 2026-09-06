@@ -46,7 +46,7 @@
   "build": {
     "appId": "cn.edu.networkservice.checkin",
     "productName": "网络服务小组签到与月报",
-    "artifactName": "网络服务小组签到与月报-${version}-${arch}.${ext}",
+    "artifactName": "network-service-checkin-${version}-${arch}.${ext}",
     "asar": true,
     "electronDist": "../../node_modules/electron/dist",
     "directories": {

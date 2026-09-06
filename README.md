@@ -1,4 +1,4 @@
-# 网络服务小组签到与月报
+# 暨南大学网络服务小组签到与月报
 
 > 面向 **Windows 10/11 共用电脑** 的 **离线** Electron 桌面应用。日常选择实际到场人员签到；月底在同一个工作区核对工时、填写文字与评分，一次导出五类正式文件。不依赖 Node.js、Python、Office 或任何网络环境。
 
@@ -12,7 +12,7 @@
 
 ## 它解决什么问题
 
-网络服务小组日常使用一台共用的 Windows 电脑：每天需要记录谁到岗、每人贡献了多少工时；月底要把这些整理成工作报表、绩效考核表、工时记录表、排班表和工资考核表五类正式文件。
+暨南大学网络服务小组日常使用一台共用的 Windows 电脑：每天需要记录谁到岗、每人贡献了多少工时；月底要把这些整理成工作报表、绩效考核表、工时记录表、排班表和工资考核表五类正式文件。
 
 这套软件把「每天签到」和「月底导出」放进同一个离线工作区：
 
@@ -48,7 +48,7 @@
 
 ## 快速开始（安装版用户）
 
-1. 从 **[Releases](https://github.com/diego20050818/network-service-checkin/releases)** 下载最新 `网络服务小组签到与月报-<版本>-x64.exe`。
+1. 从 **[Releases](https://github.com/diego20050818/network-service-checkin/releases)** 下载最新 `network-service-checkin-<版本>-x64.exe`。
 2. 双击安装；安装时可选安装目录、是否创建桌面与开始菜单快捷方式。
 3. **首次使用**：进入「排班与成员」页，下载随包提供的空白排班模板与人员信息模板，填写后导入正式排班和成员资料（应用会留存源文件副本）。
 4. **每天**：打开软件，在「签到」首页勾选实际到场人员并签到即可。
@@ -111,7 +111,7 @@
 
 ## 功能手册与操作指南
 
-预生成的整本手册位于 `output/pdf/网络服务小组功能手册与操作指南_<版本>.pdf`（含界面截图与操作步骤）。该 PDF 由 `scripts/build-user-manual.py` 基于 `docs/manual/screenshots/` 生成，属于构建产物、不入 git 仓库，可随 GitHub Release 一同作为附件分发。
+预生成的整本手册位于 `output/pdf/暨南大学网络服务小组功能手册与操作指南_<版本>.pdf`（含界面截图与操作步骤）。该 PDF 由 `scripts/build-user-manual.py` 基于 `docs/manual/screenshots/` 生成，属于构建产物、不入 git 仓库，可随 GitHub Release 一同作为附件分发。
 
 重建手册：
 
@@ -222,7 +222,7 @@ output/                程序与脚本导出的文件（git 忽略）
 发布新版本（以当前 `0.4.0` 为例）：
 
 1. **门禁**：`npm.cmd run verify`（typecheck + test + build）全通过。
-2. **打包**：`npm.cmd run package:win` 生成 `apps/desktop/release/网络服务小组签到与月报-<版本>-x64.exe` 与对应的 `.blockmap`。
+2. **打包**：`npm.cmd run package:win` 生成 `apps/desktop/release/network-service-checkin-<版本>-x64.exe` 与对应的 `.blockmap`。
 3. **打标签并推送**：
 
    ```powershell
@@ -230,14 +230,14 @@ output/                程序与脚本导出的文件（git 忽略）
    git push origin v0.4.0
    ```
 
-4. **建 Release**：在 [Releases](https://github.com/diego20050818/network-service-checkin/releases) 页基于该标签新建发布，标题用版本号 `v0.4.0`，正文引用 `CHANGELOG.md` 对应条目；附件至少带上 `.exe` 与 `.blockmap`，可选附 `output/pdf/网络服务小组功能手册与操作指南_<版本>.pdf`。
+4. **建 Release**：在 [Releases](https://github.com/diego20050818/network-service-checkin/releases) 页基于该标签新建发布，标题用版本号 `v0.4.0`，正文引用 `CHANGELOG.md` 对应条目；附件至少带上 `.exe` 与 `.blockmap`，可选附 `output/pdf/暨南大学网络服务小组功能手册与操作指南_<版本>.pdf`。
 
 命令行方式（已登录 `gh`）：
 
 ```powershell
 gh release create v0.4.0 -t "v0.4.0" -n "见 CHANGELOG.md" `
-  "apps/desktop/release/网络服务小组签到与月报-0.4.0-x64.exe" `
-  "apps/desktop/release/网络服务小组签到与月报-0.4.0-x64.exe.blockmap"
+  "apps/desktop/release/network-service-checkin-0.4.0-x64.exe" `
+  "apps/desktop/release/network-service-checkin-0.4.0-x64.exe.blockmap"
 ```
 
 > 提醒：当前安装包为 `NotSigned` 且尚未在洁净目标机实测。正式分发前建议使用组织证书签名并在 Windows 10/11 实机验证；否则用户安装时可能遇到 SmartScreen 警告。
@@ -246,4 +246,4 @@ gh release create v0.4.0 -t "v0.4.0" -n "见 CHANGELOG.md" `
 
 ## License
 
-[MIT](LICENSE) © 2026 网络服务小组
+[MIT](LICENSE) © 2026 暨南大学网络服务小组

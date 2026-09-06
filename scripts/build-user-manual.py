@@ -15,7 +15,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Tabl
 from pypdf import PdfReader
 from PIL import Image as PILImage
 
-OUT = ROOT / 'output/pdf/网络服务小组功能手册与操作指南_0.3.0.pdf'
+OUT = ROOT / 'output/pdf/暨南大学网络服务小组功能手册与操作指南_0.3.0.pdf'
 OUT.parent.mkdir(parents=True, exist_ok=True)
 SHOTS = ROOT / 'docs/manual/screenshots'
 pdfmetrics.registerFont(TTFont('YaHei', 'C:/Windows/Fonts/msyh.ttc', subfontIndex=0))
@@ -70,11 +70,11 @@ def table(rows, widths):
     story.append(item)
     story.append(Spacer(1,10))
 
-heading('网络服务小组功能手册与操作指南')
+heading('暨南大学网络服务小组功能手册与操作指南')
 p('适用版本 0.3.0　｜　2026 年 9 月', 'small')
 p('同学可按本手册完成签到、查看班表和核对工时。老师或负责同学可完成排班导入、签到改错、月报导出和备份恢复。')
 p('第一次使用', 'h2')
-steps('双击老师或负责同学提供的安装包，按提示完成安装，打开“网络服务小组签到与月报”。',
+steps('双击老师或负责同学提供的安装包，按提示完成安装，打开“暨南大学网络服务小组签到与月报”。',
       '进入“排班与成员”，导入成员信息表和正式排班，核对月份、生效日期与人员。',
       '进入“设置”，选择默认导出目录和备份目录，按需开启开机自启动。',
       '回到“签到”查看当天班次。到班后选择实际到场人员并签到。')
@@ -274,12 +274,12 @@ def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont('YaHei',8)
     canvas.setFillColor(colors.HexColor('#666666'))
-    canvas.drawString(38,22,'网络服务小组  ·  功能手册与操作指南  ·  0.3.0')
+    canvas.drawString(38,22,'暨南大学网络服务小组  ·  功能手册与操作指南  ·  0.3.0')
     canvas.drawRightString(A4[0]-38,22,str(doc.page))
     canvas.restoreState()
 
 doc = ManualDoc(str(OUT),pagesize=A4,rightMargin=38,leftMargin=38,topMargin=32,bottomMargin=42,
-                title='网络服务小组功能手册与操作指南',author='网络服务小组',pageCompression=1)
+                title='暨南大学网络服务小组功能手册与操作指南',author='暨南大学网络服务小组',pageCompression=1)
 doc.build(story,onFirstPage=footer,onLaterPages=footer)
 reader=PdfReader(str(OUT))
 assert len(reader.pages)==len(page_titles),f'Unexpected overflow: {len(reader.pages)} pages for {len(page_titles)} sections'
