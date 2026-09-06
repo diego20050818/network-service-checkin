@@ -1,0 +1,86 @@
+{
+  "name": "@network-service/checkin-desktop",
+  "version": "0.4.0",
+  "private": true,
+  "author": "网络服务小组",
+  "description": "网络服务小组签到与月报桌面应用",
+  "main": "dist/main/index.cjs",
+  "scripts": {
+    "dev": "npm run build:main && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build:main": "node scripts/build-main.mjs",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && playwright test --config ../../tests/e2e/playwright.config.ts"
+  },
+  "dependencies": {
+    "docx": "9.5.1",
+    "exceljs": "4.4.0",
+    "pizzip": "3.2.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "uuid": "11.1.1",
+    "zod": "4.1.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.3.0",
+    "@types/pizzip": "3.0.5",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "@vitejs/plugin-react": "5.0.2",
+    "concurrently": "9.2.4",
+    "cross-env": "10.0.0",
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.25.9",
+    "playwright": "1.63.0",
+    "typescript": "5.9.2",
+    "vite": "7.3.6",
+    "vitest": "3.2.7",
+    "wait-on": "8.0.4"
+  },
+  "build": {
+    "appId": "cn.edu.networkservice.checkin",
+    "productName": "网络服务小组签到与月报",
+    "artifactName": "网络服务小组签到与月报-${version}-${arch}.${ext}",
+    "asar": true,
+    "electronDist": "../../node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/templates",
+        "to": "templates",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

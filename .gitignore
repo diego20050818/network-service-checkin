@@ -1,0 +1,41 @@
+# ---------- 依赖 ----------
+node_modules/
+
+# ---------- 构建产物 ----------
+# Electron 前端与主进程构建输出
+apps/desktop/dist/
+# Vite 缓存
+apps/desktop/.vite/
+# 打包生成的 Windows 安装包与 unpacked 目录（体积大，不入仓）
+apps/desktop/release/
+# 兜底：任何位置的 dist / release
+dist/
+release/
+
+# ---------- 测试与覆盖率 ----------
+coverage/
+playwright-report/
+test-results/
+# Playwright 自动截图（运行期生成的手册截图保留在 docs/manual/screenshots）
+tests/e2e/screenshots/
+
+# ---------- 运行时导出与临时目录 ----------
+# 程序生成的导出文件（含手册 PDF）与临时工作目录
+output/
+outputs/
+.tmp/
+*.log
+
+# ---------- 桌面应用本地数据（开发期生成） ----------
+apps/desktop/.test-data/
+
+# ---------- 打包的样例 zip ----------
+# 样例已解压为随包模板 apps/desktop/resources/templates/ 与测试参考输出
+# tests/fixtures/reference-output/，zip 仅是打包副本，不重复入仓。
+*.zip
+
+# ---------- 系统与编辑器 ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,27 @@
+{
+  "name": "network-service-checkin",
+  "version": "0.4.0",
+  "private": true,
+  "description": "网络服务小组离线签到、看板与月报导出桌面应用",
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @network-service/checkin-desktop",
+    "build": "npm run build --workspace @network-service/checkin-desktop",
+    "package:win": "npm run package:win --workspace @network-service/checkin-desktop",
+    "typecheck": "npm run typecheck --workspace @network-service/checkin-desktop",
+    "test": "npm run test --workspace @network-service/checkin-desktop",
+    "test:e2e": "npm run test:e2e --workspace @network-service/checkin-desktop",
+    "verify": "npm run typecheck && npm run test && npm run build"
+  },
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    },
+    "@xmldom/xmldom": "0.9.12"
+  }
+}
