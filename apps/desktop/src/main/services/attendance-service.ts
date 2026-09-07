@@ -8,6 +8,7 @@ import type {
   ShiftKind,
   ShiftSlotView,
   ShiftView,
+  WorkType,
 } from "../../shared/contracts";
 import { dateFromOptionalIso, formatLocalDate, formatLocalTime, isWithinShift, lateStatusFor } from "../../domain/time";
 import type { DatabaseStore } from "../database";
@@ -23,6 +24,8 @@ type ShiftRow = {
   paid_minutes: number;
   attendance_mode: "lenient" | "late_mark";
   late_threshold_minutes: number;
+  work_type: WorkType;
+  note: string;
 };
 
 type SlotRow = {
@@ -35,6 +38,18 @@ type SlotRow = {
   actual_member_name: string | null;
   punch_time: string | null;
   late_status: ShiftSlotView["lateStatus"];
+  slot_role: ShiftSlotView["role"];
+  slot_source: ShiftSlotView["source"];
+  slot_note: string;
+  leave_id: string | null;
+  leave_member_id: string | null;
+  leave_member_name: string | null;
+  replacement_member_id: string | null;
+  replacement_member_name: string | null;
+  leave_reason: string | null;
+  leave_status: "active" | null;
+  leave_created_at: string | null;
+  leave_updated_at: string | null;
 };
 
 type RecordRow = {
@@ -43,6 +58,8 @@ type RecordRow = {
   shift_slot_id: string;
   date: string;
   kind: ShiftKind;
+  work_type: WorkType;
+  slot_role: AttendanceRecordView["slotRole"];
   label: string;
   start_time: string;
   end_time: string;
@@ -58,7 +75,8 @@ type RecordRow = {
 };
 
 const RECORD_SELECT = `
-  SELECT ar.id, ar.shift_id, ar.shift_slot_id, s.date, s.kind, s.label, s.start_time, s.end_time,
+  SELECT ar.id, ar.shift_id, ar.shift_slot_id, s.date, s.kind, s.work_type, ss.slot_role,
+         s.label, s.start_time, s.end_time,
          scheduled.name AS scheduled_member_name,
          ar.actual_member_id, actual.name AS actual_member_name,
          ar.punch_time, ar.entered_at, ar.paid_minutes, ar.late_status, ar.source, ar.status
@@ -76,6 +94,8 @@ function mapRecord(row: RecordRow): AttendanceRecordView {
     slotId: row.shift_slot_id,
     date: row.date,
     kind: row.kind,
+    workType: row.work_type,
+    slotRole: row.slot_role,
     label: row.label,
     startTime: row.start_time,
     endTime: row.end_time,
@@ -136,6 +156,9 @@ export class AttendanceService {
     const slotIds = new Set(shift.slots.map((slot) => slot.id));
     for (const selection of selections) {
       if (!slotIds.has(selection.slotId)) throw new Error("签到席位不属于当前班次");
+      const slot = shift.slots.find((item) => item.id === selection.slotId)!;
+      if (slot.leave && !slot.leave.replacementMemberId) throw new Error("该席位已请假且没有代班人");
+      if (slot.leave?.replacementMemberId && selection.memberId !== slot.leave.replacementMemberId) throw new Error("该席位只能由已安排的代班人签到");
       if (!this.members.get(selection.memberId)?.active) throw new Error("所选成员不存在或已停用");
     }
 
@@ -205,8 +228,10 @@ export class AttendanceService {
       conditions.push("ar.actual_member_id = ?");
       parameters.push(filters.memberId);
     }
-    if (filters.kind && filters.kind !== "all") {
-      conditions.push("s.kind = ?");
+    if (filters.kind === "overtime") {
+      conditions.push("s.work_type = 'overtime'");
+    } else if (filters.kind && filters.kind !== "all") {
+      conditions.push("s.work_type = 'regular' AND s.kind = ?");
       parameters.push(filters.kind);
     }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -226,6 +251,9 @@ export class AttendanceService {
     const record = this.getRecord(recordId);
     if (record.status !== "active") throw new Error("只能更正有效签到记录");
     if (!this.members.get(memberId)?.active) throw new Error("目标成员不存在或已停用");
+    const leave = this.store.prepare("SELECT replacement_member_id FROM leave_records WHERE shift_slot_id = ? AND status = 'active'")
+      .get(record.slotId) as { replacement_member_id: string | null } | undefined;
+    if (leave && memberId !== leave.replacement_member_id) throw new Error("请假席位只能登记已安排的代班人");
     if (record.actualMemberId === memberId) return record;
     const duplicate = this.store
       .prepare("SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active' AND id <> ?")
@@ -252,6 +280,9 @@ export class AttendanceService {
   restore(recordId: string): AttendanceRecordView {
     const record = this.getRecord(recordId);
     if (record.status === "active") return record;
+    const leave = this.store.prepare("SELECT replacement_member_id FROM leave_records WHERE shift_slot_id = ? AND status = 'active'")
+      .get(record.slotId) as { replacement_member_id: string | null } | undefined;
+    if (leave && record.actualMemberId !== leave.replacement_member_id) throw new Error("当前请假安排与该签到人员不一致，不能恢复");
     const slotConflict = this.store
       .prepare("SELECT id FROM attendance_records WHERE shift_slot_id = ? AND status = 'active'")
       .get(record.slotId) as { id: string } | undefined;
@@ -270,8 +301,10 @@ export class AttendanceService {
   addManual(input: ManualAttendanceInput): AttendanceRecordView {
     const slot = this.store
       .prepare(`
-        SELECT ss.id, ss.shift_id, s.date, s.start_time, s.paid_minutes, s.attendance_mode, s.late_threshold_minutes
+        SELECT ss.id, ss.shift_id, s.date, s.start_time, s.paid_minutes, s.attendance_mode, s.late_threshold_minutes,
+               lr.id AS leave_id, lr.replacement_member_id
         FROM shift_slots ss JOIN shifts s ON s.id = ss.shift_id
+        LEFT JOIN leave_records lr ON lr.shift_slot_id = ss.id AND lr.status = 'active'
         WHERE ss.id = ? AND s.active = 1 AND ss.is_vacant = 0
       `)
       .get(input.slotId) as
@@ -283,9 +316,13 @@ export class AttendanceService {
           paid_minutes: number;
           attendance_mode: "lenient" | "late_mark";
           late_threshold_minutes: number;
+          leave_id: string | null;
+          replacement_member_id: string | null;
         }
       | undefined;
     if (!slot) throw new Error("补记席位不存在或已失效");
+    if (slot.leave_id && !slot.replacement_member_id) throw new Error("该席位已请假且没有代班人");
+    if (slot.replacement_member_id && input.memberId !== slot.replacement_member_id) throw new Error("该席位只能由已安排的代班人补记");
     if (!this.members.get(input.memberId)?.active) throw new Error("所选成员不存在或已停用");
     const punchDate = input.historicalPunchTime ? dateFromOptionalIso(input.historicalPunchTime) : null;
     const punchTime = punchDate?.toISOString() ?? null;
@@ -336,12 +373,20 @@ export class AttendanceService {
     const slots = this.store
       .prepare(`
         SELECT ss.id, ss.position, ss.scheduled_member_id, scheduled.name AS scheduled_member_name,
+               ss.slot_role, ss.slot_source, ss.slot_note,
                ar.id AS attendance_id, ar.actual_member_id, actual.name AS actual_member_name,
-               ar.punch_time, ar.late_status
+               ar.punch_time, ar.late_status,
+               lr.id AS leave_id, lr.member_id AS leave_member_id, leave_member.name AS leave_member_name,
+               lr.replacement_member_id, replacement.name AS replacement_member_name,
+               lr.reason AS leave_reason, lr.status AS leave_status,
+               lr.created_at AS leave_created_at, lr.updated_at AS leave_updated_at
         FROM shift_slots ss
         LEFT JOIN members scheduled ON scheduled.id = ss.scheduled_member_id
         LEFT JOIN attendance_records ar ON ar.shift_slot_id = ss.id AND ar.status = 'active'
         LEFT JOIN members actual ON actual.id = ar.actual_member_id
+        LEFT JOIN leave_records lr ON lr.shift_slot_id = ss.id AND lr.status = 'active'
+        LEFT JOIN members leave_member ON leave_member.id = lr.member_id
+        LEFT JOIN members replacement ON replacement.id = lr.replacement_member_id
         WHERE ss.shift_id = ? AND ss.is_vacant = 0 ORDER BY ss.position
       `)
       .all(row.id) as unknown as SlotRow[];
@@ -355,6 +400,8 @@ export class AttendanceService {
       paidMinutes: Number(row.paid_minutes),
       attendanceMode: row.attendance_mode,
       lateThresholdMinutes: Number(row.late_threshold_minutes),
+      workType: row.work_type,
+      note: row.note,
       slots: slots.map((slot) => ({
         id: slot.id,
         position: Number(slot.position),
@@ -365,6 +412,20 @@ export class AttendanceService {
         actualMemberName: slot.actual_member_name,
         punchTime: slot.punch_time,
         lateStatus: slot.late_status,
+        role: slot.slot_role,
+        source: slot.slot_source,
+        note: slot.slot_note,
+        leave: slot.leave_id ? {
+          id: slot.leave_id,
+          memberId: slot.leave_member_id!,
+          memberName: slot.leave_member_name!,
+          replacementMemberId: slot.replacement_member_id,
+          replacementMemberName: slot.replacement_member_name,
+          reason: slot.leave_reason ?? "",
+          status: slot.leave_status!,
+          createdAt: slot.leave_created_at!,
+          updatedAt: slot.leave_updated_at!,
+        } : null,
       })),
     };
   }

@@ -63,12 +63,12 @@ function RecordRow({ record, members, onMutate }: { record: AttendanceRecordView
   const [memberId, setMemberId] = useState(record.actualMemberId);
   return (
     <tr className={record.status === "revoked" ? "muted-row" : ""}>
-      <td><strong>{record.date}</strong><small>{record.label} · {record.startTime}-{record.endTime}</small></td>
+      <td><strong>{record.date}</strong><small>{record.workType === "overtime" ? "加班" : record.label} · {record.startTime}-{record.endTime} · {record.slotRole === "staff" ? "办公人员" : record.slotRole === "overtime" ? "加班人员" : "负责人"}</small></td>
       <td>{record.scheduledMemberName ?? "空位"}</td>
       <td><select value={memberId} disabled={record.status === "revoked"} onChange={(event) => setMemberId(event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></td>
       <td>{record.punchTime ? new Date(record.punchTime).toLocaleString("zh-CN", { hour12: false }) : "补记未填写"}</td>
       <td><Hours minutes={record.paidMinutes} /></td>
-      <td><StatusPill tone={record.status === "revoked" ? "red" : record.lateStatus === "late" ? "amber" : record.lateStatus === "manual_unjudged" ? "gray" : "green"}>{record.status === "revoked" ? "已撤销" : record.lateStatus === "late" ? "迟到" : record.lateStatus === "manual_unjudged" ? "补记未判定" : "正常"}</StatusPill></td>
+      <td><StatusPill tone={record.status === "revoked" ? "red" : record.workType === "overtime" ? "blue" : record.lateStatus === "late" ? "amber" : record.lateStatus === "manual_unjudged" ? "gray" : "green"}>{record.status === "revoked" ? "已撤销" : record.workType === "overtime" ? "加班" : record.lateStatus === "late" ? "迟到" : record.lateStatus === "manual_unjudged" ? "补记未判定" : "正常"}</StatusPill></td>
       <td><div className="row-actions">
         {record.status === "active" && memberId !== record.actualMemberId && <button onClick={() => onMutate(() => window.checkinApi.correctRecord(record.id, memberId), "实际人员已更正")}>保存更正</button>}
         {record.status === "active" ? <button className="danger-text" onClick={() => onMutate(() => window.checkinApi.revokeRecord(record.id), "误签已撤销")}>撤销</button> : <button onClick={() => onMutate(() => window.checkinApi.restoreRecord(record.id), "记录已恢复")}>恢复</button>}
@@ -84,7 +84,7 @@ function ManualEntry({ members, onSaved }: { members: Member[]; onSaved(): void 
   const [memberId, setMemberId] = useState("");
   const [punchTime, setPunchTime] = useState("");
   const [error, setError] = useState("");
-  const availableSlots = useMemo(() => shifts.flatMap((shift) => shift.slots.filter((slot) => !slot.attendanceId).map((slot) => ({ shift, slot }))), [shifts]);
+  const availableSlots = useMemo(() => shifts.flatMap((shift) => shift.slots.filter((slot) => !slot.attendanceId && !(slot.leave && !slot.leave.replacementMemberId)).map((slot) => ({ shift, slot }))), [shifts]);
 
   useEffect(() => {
     void window.checkinApi.getShiftsForDate(date).then((value) => { setShifts(value); setSlotId(""); setError(""); }).catch((cause) => setError(errorMessage(cause)));
@@ -101,10 +101,14 @@ function ManualEntry({ members, onSaved }: { members: Member[]; onSaved(): void 
   return <Card className="manual-card"><div><h2>补记签到</h2><p>只关联已有班次；未填历史打卡时刻时，迟到状态保持“人工补记／未判定”。</p></div>
     <div className="manual-fields">
       <label>班次日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-      <label>班次席位<select value={slotId} onChange={(event) => setSlotId(event.target.value)}><option value="">选择未签到席位</option>{availableSlots.map(({ shift, slot }) => <option key={slot.id} value={slot.id}>{shift.startTime}-{shift.endTime} {shift.label} · 原排班 {slot.scheduledMemberName ?? "空位"}</option>)}</select></label>
+      <label>班次席位<select value={slotId} onChange={(event) => {
+        const nextSlotId = event.target.value;
+        setSlotId(nextSlotId);
+        const selected = availableSlots.find(({ slot }) => slot.id === nextSlotId)?.slot;
+        setMemberId(selected?.leave?.replacementMemberId ?? selected?.scheduledMemberId ?? "");
+      }}><option value="">选择未签到席位</option>{availableSlots.map(({ shift, slot }) => <option key={slot.id} value={slot.id}>{shift.startTime}-{shift.endTime} {shift.workType === "overtime" ? "加班" : shift.label} · {slot.role === "staff" ? "办公" : slot.role === "overtime" ? "加班" : "负责"} {slot.leave?.replacementMemberName ?? slot.scheduledMemberName ?? "空位"}</option>)}</select></label>
       <label>实际人员<select value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">选择成员</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
       <label>历史打卡时刻 可留空<input type="datetime-local" value={punchTime} onChange={(event) => setPunchTime(event.target.value)} /></label>
       <button className="secondary-button" onClick={() => void save()}>保存补记</button>
     </div>{error && <div className="inline-error compact" role="alert">{error}</div>}</Card>;
 }
-

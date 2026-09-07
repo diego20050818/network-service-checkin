@@ -2,9 +2,9 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
-const MIGRATION_1 = `
+export const MIGRATION_1 = `
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
-const MIGRATION_2 = `
+export const MIGRATION_2 = `
 CREATE TABLE IF NOT EXISTS member_imports (
   id TEXT PRIMARY KEY,
   source_name TEXT NOT NULL,
@@ -147,13 +147,50 @@ CREATE TABLE IF NOT EXISTS member_imports (
 );
 `;
 
+const MIGRATION_3 = `
+ALTER TABLE schedule_imports
+  ADD COLUMN source_type TEXT NOT NULL DEFAULT 'file' CHECK (source_type IN ('file', 'system'));
+
+ALTER TABLE shifts
+  ADD COLUMN work_type TEXT NOT NULL DEFAULT 'regular' CHECK (work_type IN ('regular', 'overtime'));
+ALTER TABLE shifts
+  ADD COLUMN note TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE shift_slots
+  ADD COLUMN slot_role TEXT NOT NULL DEFAULT 'responsible' CHECK (slot_role IN ('responsible', 'staff', 'overtime'));
+ALTER TABLE shift_slots
+  ADD COLUMN slot_source TEXT NOT NULL DEFAULT 'imported' CHECK (slot_source IN ('imported', 'manual'));
+ALTER TABLE shift_slots
+  ADD COLUMN slot_note TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS leave_records (
+  id TEXT PRIMARY KEY,
+  shift_slot_id TEXT NOT NULL REFERENCES shift_slots(id),
+  member_id TEXT NOT NULL REFERENCES members(id),
+  replacement_member_id TEXT REFERENCES members(id),
+  reason TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_leave_active_slot
+  ON leave_records(shift_slot_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS ix_leave_member_status
+  ON leave_records(member_id, status);
+`;
+
 export class DatabaseStore {
   private connectionValue: DatabaseSync;
 
   constructor(readonly path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.connectionValue = this.open(path);
-    this.migrate();
+    try {
+      this.migrate();
+    } catch (error) {
+      this.connectionValue.close();
+      throw error;
+    }
   }
 
   get connection(): DatabaseSync {
@@ -218,6 +255,12 @@ export class DatabaseStore {
       this.transaction(() => {
         this.connectionValue.exec(MIGRATION_2);
         this.connectionValue.exec("PRAGMA user_version = 2");
+      });
+    }
+    if (row.user_version < 3) {
+      this.transaction(() => {
+        this.connectionValue.exec(MIGRATION_3);
+        this.connectionValue.exec("PRAGMA user_version = 3");
       });
     }
   }

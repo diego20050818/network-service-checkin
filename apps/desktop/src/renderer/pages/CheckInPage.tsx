@@ -107,19 +107,23 @@ function ShiftAgendaRow({
       shift.slots.map((slot) => [
         slot.id,
         {
-          enabled: shift.slots.length === 1 && !slot.attendanceId,
-          memberId: slot.actualMemberId ?? slot.scheduledMemberId ?? "",
+          enabled: shift.slots.length === 1 && !slot.attendanceId && !(slot.leave && !slot.leave.replacementMemberId),
+          memberId: slot.actualMemberId ?? slot.leave?.replacementMemberId ?? slot.scheduledMemberId ?? "",
         },
       ]),
     ),
   );
   const [submitting, setSubmitting] = useState(false);
+  const [staffMemberId, setStaffMemberId] = useState("");
+  const [addingStaff, setAddingStaff] = useState(false);
   const completed = shift.slots.filter((slot) => slot.attendanceId).length;
+  const exempt = shift.slots.filter((slot) => slot.leave && !slot.leave.replacementMemberId && !slot.attendanceId).length;
+  const resolved = completed + exempt;
   const localTime = formatLocalTime(now);
   const phase = localTime < shift.startTime ? "upcoming" : isWithinShift(localTime, shift.startTime, shift.endTime) ? "current" : "ended";
-  const phaseLabel = completed === shift.slots.length ? "已完成" : phase === "current" ? "可签到" : phase === "upcoming" ? "未到班" : "已结束";
-  const phaseTone = completed === shift.slots.length ? "green" : phase === "current" ? "blue" : phase === "upcoming" ? "gray" : "red";
-  const responsible = shift.slots.map((slot) => slot.scheduledMemberName ?? "空位").join("、");
+  const phaseLabel = resolved === shift.slots.length ? "已处理" : phase === "current" ? "可签到" : phase === "upcoming" ? "未到班" : "已结束";
+  const phaseTone = resolved === shift.slots.length ? "green" : phase === "current" ? "blue" : phase === "upcoming" ? "gray" : "red";
+  const responsible = shift.slots.filter((slot) => slot.role === "responsible").map((slot) => slot.scheduledMemberName ?? "空位").join("、");
   const selections = useMemo<CheckInSelection[]>(
     () =>
       shift.slots
@@ -127,6 +131,16 @@ function ShiftAgendaRow({
         .map((slot) => ({ slotId: slot.id, memberId: selected[slot.id]!.memberId })),
     [selected, shift.slots],
   );
+
+  useEffect(() => {
+    setSelected((current) => Object.fromEntries(shift.slots.map((slot) => [
+      slot.id,
+      current[slot.id] ?? {
+        enabled: shift.slots.length === 1 && !slot.attendanceId && !(slot.leave && !slot.leave.replacementMemberId),
+        memberId: slot.actualMemberId ?? slot.leave?.replacementMemberId ?? slot.scheduledMemberId ?? "",
+      },
+    ])));
+  }, [shift.slots]);
 
   async function submit() {
     if (selections.length === 0) {
@@ -145,8 +159,22 @@ function ShiftAgendaRow({
     }
   }
 
+  async function addStaff() {
+    if (!staffMemberId) return;
+    setAddingStaff(true);
+    try {
+      await window.checkinApi.addShiftStaff({ shiftId: shift.id, memberId: staffMemberId });
+      setStaffMemberId("");
+      await onSuccess("办公人员已加入本次班次");
+    } catch (cause) {
+      onError(errorMessage(cause));
+    } finally {
+      setAddingStaff(false);
+    }
+  }
+
   return (
-    <section className={`day-shift-row ${phase} ${completed === shift.slots.length ? "complete" : ""}`}>
+    <section className={`day-shift-row ${phase} ${resolved === shift.slots.length ? "complete" : ""}`}>
       <div className="day-shift-time">
         <strong>{shift.startTime}</strong>
         <span>{shift.endTime}</span>
@@ -156,14 +184,16 @@ function ShiftAgendaRow({
         <div className="day-shift-header">
           <div>
             <div className="day-shift-title-row">
-              <h2>{shift.label}</h2>
+              <h2>{shift.workType === "overtime" ? "加班" : shift.label}</h2>
+              {shift.workType === "overtime" && <span className="shift-kind-badge overtime">自定义时段</span>}
               <span className={`calendar-state ${phaseTone}`}><i />{phaseLabel}</span>
             </div>
-            <p className="shift-responsible">负责人：<strong>{responsible}</strong></p>
+            <p className="shift-responsible">{shift.workType === "overtime" ? "加班人员" : "负责人"}：<strong>{shift.workType === "overtime" ? shift.slots.map((slot) => slot.scheduledMemberName).filter(Boolean).join("、") : responsible || "未安排"}</strong></p>
+            {shift.note && <p className="shift-note">备注：{shift.note}</p>}
           </div>
           <div className="day-shift-stats">
             {phase === "current" && <div className="shift-countdown"><span>距结束</span><strong>{countdownTo(shift.endTime, now)}</strong></div>}
-            <div className="shift-progress"><strong>{completed}/{shift.slots.length}</strong><span>已签到</span></div>
+            <div className="shift-progress"><strong>{resolved}/{shift.slots.length}</strong><span>{exempt ? `已处理（${exempt} 请假）` : "已签到"}</span></div>
           </div>
         </div>
 
@@ -171,28 +201,34 @@ function ShiftAgendaRow({
           {shift.slots.map((slot) => {
             const state = selected[slot.id] ?? { enabled: false, memberId: "" };
             const already = Boolean(slot.attendanceId);
+            const leaveExempt = Boolean(slot.leave && !slot.leave.replacementMemberId);
+            const roleLabel = slot.role === "staff" ? "办公人员" : slot.role === "overtime" ? "加班人员" : "负责人";
             return (
-              <div className={`slot-row ${already ? "done" : ""}`} key={slot.id}>
+              <div className={`slot-row ${already ? "done" : ""} ${leaveExempt ? "leave-exempt" : ""}`} key={slot.id}>
                 {shift.slots.length > 1 && (
                   <input
                     type="checkbox"
                     aria-label={`选择席位 ${slot.position}`}
-                    checked={already || state.enabled}
-                    disabled={already || phase !== "current"}
+                    checked={already || leaveExempt || state.enabled}
+                    disabled={already || leaveExempt || phase !== "current"}
                     onChange={(event) =>
                       setSelected((current) => ({ ...current, [slot.id]: { ...state, enabled: event.target.checked } }))
                     }
                   />
                 )}
                 <div className="slot-label">
-                  <span>席位 {slot.position}</span>
+                  <span>{roleLabel}</span>
                   <small>原排班：{slot.scheduledMemberName ?? "空位"}</small>
+                  {slot.leave?.replacementMemberName && <small>代班：{slot.leave.replacementMemberName}</small>}
+                  {slot.note && <small>备注：{slot.note}</small>}
                 </div>
                 {already ? (
                   <div className="signed-person">
                     <strong>{slot.actualMemberName}</strong>
                     <small>{slot.punchTime ? new Date(slot.punchTime).toLocaleTimeString("zh-CN", { hour12: false }) : "已签到"}</small>
                   </div>
+                ) : leaveExempt ? (
+                  <div className="shift-slot-state leave">请假豁免{slot.leave?.reason ? ` · ${slot.leave.reason}` : ""}</div>
                 ) : phase === "current" ? (
                   <select
                     aria-label={`席位 ${slot.position} 实际到场人员`}
@@ -213,6 +249,13 @@ function ShiftAgendaRow({
         </div>
 
         <div className="day-shift-action">
+          {shift.workType === "regular" && <div className="checkin-add-staff">
+            <select aria-label="添加办公人员" value={staffMemberId} onChange={(event) => setStaffMemberId(event.target.value)}>
+              <option value="">添加办公人员…</option>
+              {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+            </select>
+            <button disabled={!staffMemberId || addingStaff} onClick={() => void addStaff()}>{addingStaff ? "添加中…" : "添加"}</button>
+          </div>}
           <button className="primary-button" disabled={phase !== "current" || submitting || selections.length === 0} onClick={() => void submit()}>
             {phase === "upcoming" ? "尚未到签到时间" : phase === "ended" ? "本班次已结束" : submitting ? "正在保存…" : shift.slots.length > 1 ? `为所选 ${selections.length} 人签到` : "签到"}
           </button>

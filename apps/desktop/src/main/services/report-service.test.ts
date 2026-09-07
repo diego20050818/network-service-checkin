@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defaultReportDraft } from "../../domain/report";
 import { DatabaseStore } from "../database";
 import { AttendanceService } from "./attendance-service";
+import { AdjustmentService } from "./adjustment-service";
 import { DashboardService } from "./dashboard-service";
 import { MemberService } from "./member-service";
 import { ReportService } from "./report-service";
@@ -25,6 +26,7 @@ describe("ReportService", () => {
       const members = new MemberService(store);
       const settings = new SettingsService(store);
       const attendance = new AttendanceService(store, members);
+      const adjustments = new AdjustmentService(store, members, attendance);
       const dashboard = new DashboardService(store, attendance, members);
       const importId = addScheduleImport(store);
       const scheduleSource = join(directory, "客户正式排班.xlsx");
@@ -42,6 +44,8 @@ describe("ReportService", () => {
         { slotId: maintenance.slotIds[0]!, memberId: maintenance.memberIds.甲! },
         { slotId: maintenance.slotIds[1]!, memberId: maintenance.memberIds.乙! },
       ], "2026-09-07T17:10:00+08:00");
+      const overtime = adjustments.createOvertime({ memberId: desk.memberIds.甲!, date: "2026-09-07", startTime: "20:00", endTime: "22:00", note: "晚间维护" });
+      attendance.addManual({ slotId: overtime.slotId, memberId: desk.memberIds.甲!, historicalPunchTime: "2026-09-07T20:00:00+08:00" });
       const service = new ReportService(store, dashboard, members, settings, resolve("resources/templates"));
       const draft = {
         ...defaultReportDraft(2026, 9),
@@ -62,11 +66,16 @@ describe("ReportService", () => {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.readFile(workbookFile.path);
       expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["工时记录", "签到明细"]);
-      expect(workbook.getWorksheet("签到明细")?.rowCount).toBe(5);
+      expect(workbook.getWorksheet("签到明细")?.rowCount).toBe(6);
       expect(workbook.getWorksheet("工时记录")?.getCell("D2").value).toBe("工时（h）");
       const memberTitles = Array.from({ length: 15 }, (_, index) => String(workbook.getWorksheet("工时记录")?.getCell(1, 1 + index * 9).value ?? ""));
-      expect(memberTitles.some((title) => title.includes("甲") && title.includes("工时：7.25h"))).toBe(true);
-      expect(workbook.getWorksheet("签到明细")?.getCell("J1").value).toBe("计薪工时（h）");
+      expect(memberTitles.some((title) => title.includes("甲") && title.includes("工时：9.25h"))).toBe(true);
+      expect(workbook.getWorksheet("签到明细")?.getCell("L1").value).toBe("计薪工时（h）");
+      const detailRows = workbook.getWorksheet("签到明细")!.getRows(2, 5) ?? [];
+      const overtimeRow = detailRows.find((row) => row.getCell(3).value === "加班");
+      expect(overtimeRow?.getCell(4).value).toBe("加班人员");
+      expect(overtimeRow?.getCell(12).value).toBe(2);
+      expect(overtimeRow?.getCell(12).numFmt).toBe('0.##"h"');
 
       for (const file of result.files.filter((item) => item.fileName.endsWith(".docx"))) {
         const zip = new PizZip(await readFile(file.path));
@@ -78,6 +87,7 @@ describe("ReportService", () => {
       expect(scheduleXml).toContain("2026-09-07");
       expect(scheduleXml).toContain("原始排班表");
       expect(scheduleXml).toContain("值班日期");
+      expect(scheduleXml).not.toContain("加班");
       const wageFile = result.files.find((file) => file.key === "wageAssessment")!;
       const wageXml = new PizZip(await readFile(wageFile.path)).file("word/document.xml")?.asText() ?? "";
       const wageText = [...wageXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join("");
@@ -85,12 +95,12 @@ describe("ReportService", () => {
 
       const systemDefaultPreview = service.preview({ ...draft, wageWorkloads: {} });
       const wageRows = systemDefaultPreview.files.find((file) => file.key === "wageAssessment")?.tables[0]?.rows ?? [];
-      expect(wageRows.some((row) => row.includes("甲") && row.includes("7.25h"))).toBe(true);
+      expect(wageRows.some((row) => row.includes("甲") && row.includes("9.25h"))).toBe(true);
 
       const snapshot = JSON.parse(
         (store.prepare("SELECT snapshot_json FROM export_batches WHERE id = ?").get(result.batchId) as { snapshot_json: string }).snapshot_json,
       ) as { dashboard: { metrics: { paidMinutes: number } } };
-      expect(snapshot.dashboard.metrics.paidMinutes).toBe(555);
+      expect(snapshot.dashboard.metrics.paidMinutes).toBe(675);
     } finally {
       store.close();
     }

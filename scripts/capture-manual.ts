@@ -5,6 +5,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import { DatabaseStore } from '../apps/desktop/src/main/database';
 import { MemberService } from '../apps/desktop/src/main/services/member-service';
 import { AttendanceService } from '../apps/desktop/src/main/services/attendance-service';
+import { AdjustmentService } from '../apps/desktop/src/main/services/adjustment-service';
 import { SettingsService } from '../apps/desktop/src/main/services/settings-service';
 import { addScheduleImport, addShift } from '../apps/desktop/src/main/services/test-helpers.test-util';
 import { formatLocalDate, addDays } from '../apps/desktop/src/domain/time';
@@ -21,6 +22,7 @@ async function main() {
   const store = new DatabaseStore(join(data, 'app.sqlite3'));
   const members = new MemberService(store, join(data, 'member-sources'));
   const attendance = new AttendanceService(store, members);
+  const adjustments = new AdjustmentService(store, members, attendance);
   const today = formatLocalDate(new Date());
   const month = today.slice(0, 7);
   const nowHour = new Date().getHours();
@@ -60,6 +62,12 @@ async function main() {
   }
   const current = addShift(store, members, { importId, date: today, kind:'maintenance', startTime:start, endTime:end, paidMinutes:nowHour < 23 ? 60 : 59, people:['张同学','李同学','王同学'] });
   if (nowHour < 23) addShift(store, members, { importId, date:today,kind:'weekend',startTime:'23:30',endTime:'23:59',paidMinutes:29,people:['王同学'] });
+  const adjusted = addShift(store, members, { importId, date:today,kind:'desk',startTime:'22:00',endTime:'23:00',paidMinutes:60,people:['张同学'] });
+  adjustments.createLeave({slotId:adjusted.slotIds[0]!,replacementMemberId:members.findByExactName('李同学')[0]!.id,reason:'课程冲突'},new Date(`${today}T21:00:00+08:00`));
+  adjustments.addShiftStaff({shiftId:adjusted.shiftId,memberId:members.findByExactName('王同学')[0]!.id});
+  const overtime = adjustments.createOvertime({memberId:members.findByExactName('张同学')[0]!.id,date:today,startTime:start,endTime:end,note:'晚间机房维护'});
+  attendance.checkIn(overtime.shiftId,[{slotId:overtime.slotId,memberId:overtime.memberId}],new Date().toISOString());
+  adjustments.createOvertime({memberId:members.findByExactName('李同学')[0]!.id,date:today,startTime:start,endTime:end,note:'协助巡检'});
   new SettingsService(store).updateStorage({defaultOutputDirectory:join(data,'exports'),backupDirectory:join(data,'backups')});
   store.close();
   const env = {...process.env, NODE_ENV:'test'};
@@ -94,6 +102,10 @@ async function main() {
     await shot('04-周班表');
     await page.locator('.metric-grid').scrollIntoViewIfNeeded();
     await shot('05-工时汇总');
+    await nav('请假与加班');
+    await expect(page.getByRole('heading',{name:'加班安排'})).toBeVisible();
+    await shot('19-请假与加班',page.locator('.adjustment-shift-card').filter({hasText:'22:00-23:00'}));
+    await shot('21-加班安排',page.locator('.dashboard-section').filter({has:page.getByRole('heading',{name:'加班安排',exact:true})}));
     await nav('排班与成员');
     await shot('06-导入排班和成员');
     await page.locator('.member-chips button').filter({hasText:'张同学'}).click();
@@ -128,11 +140,12 @@ async function main() {
     await nav('设置');
     await expect(page.locator('.settings-file-table').getByText('本月排班示例.xlsx',{exact:true})).toBeVisible();
     await shot('14-系统与文件位置');
+    await shot('20-更新设置',page.locator('.update-settings-row'));
     await shot('15-当前使用文件',page.locator('.settings-section').filter({has:page.getByRole('heading',{name:'当前使用的文件'})}));
     await page.getByRole('button',{name:'立即备份',exact:true}).click();
     await expect(page.getByRole('status')).toContainText('备份完成');
     await shot('16-备份管理',page.locator('.settings-section').filter({has:page.getByRole('heading',{name:'备份管理'})}));
-    await writeFile(join(root,'.tmp/manual-capture.json'),JSON.stringify({version:'0.3.0',capturedAt:new Date().toISOString(),userData,screenshots:18,demoNames:['张同学','李同学','王同学']},null,2));
+    await writeFile(join(root,'.tmp/manual-capture.json'),JSON.stringify({version:'0.5.0',capturedAt:new Date().toISOString(),userData,screenshots:21,demoNames:['张同学','李同学','王同学']},null,2));
   } finally { await application.close(); }
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

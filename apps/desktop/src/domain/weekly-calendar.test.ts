@@ -8,6 +8,8 @@ function shift(id: string, startTime: string, endTime: string): ShiftView {
     date: "2026-09-07",
     kind: "desk",
     label: "坐班",
+    workType: "regular",
+    note: "",
     startTime,
     endTime,
     paidMinutes: 120,
@@ -16,6 +18,7 @@ function shift(id: string, startTime: string, endTime: string): ShiftView {
     slots: [{
       id: `${id}-slot`, position: 1, scheduledMemberId: "member-1", scheduledMemberName: "甲",
       attendanceId: null, actualMemberId: null, actualMemberName: null, punchTime: null, lateStatus: null,
+      role: "responsible", source: "imported", note: "", leave: null,
     }],
   };
 }

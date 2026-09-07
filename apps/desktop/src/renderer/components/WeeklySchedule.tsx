@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { addDays, formatLocalDate, parseTimeToMinutes } from "../../domain/time";
 import { layoutOverlappingShifts, mondayOfWeek, weeklySlotState, type WeeklySlotState } from "../../domain/weekly-calendar";
-import type { ShiftKind, ShiftSlotView, ShiftView } from "../../shared/contracts";
+import type { ShiftFilter, ShiftSlotView, ShiftView } from "../../shared/contracts";
 import { errorMessage } from "../App";
 
 const DAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const STATE_LABELS: Record<WeeklySlotState, string> = { arrived: "到岗", absent: "未到岗", upcoming: "未到班" };
+const STATE_LABELS: Record<WeeklySlotState, string> = { arrived: "到岗", absent: "未到岗", upcoming: "未到班", leave: "请假豁免" };
 const PIXELS_PER_MINUTE = 1;
 
 interface Props {
-  kind: ShiftKind | "all";
+  kind: ShiftFilter;
   memberId: string;
 }
 
@@ -43,7 +43,10 @@ export function WeeklySchedule({ kind, memberId }: Props) {
   }, []);
 
   const visibleShifts = useMemo(
-    () => shifts.filter((shift) => (kind === "all" || shift.kind === kind) && visibleSlots(shift, memberId).length > 0),
+    () => shifts.filter((shift) => (
+      kind === "all"
+      || (kind === "overtime" ? shift.workType === "overtime" : shift.workType === "regular" && shift.kind === kind)
+    ) && visibleSlots(shift, memberId).length > 0),
     [kind, memberId, shifts],
   );
   const startMinute = visibleShifts.length
@@ -83,7 +86,7 @@ export function WeeklySchedule({ kind, memberId }: Props) {
           </div>
         </div>
         <div className="weekly-legend" aria-label="到岗状态图例">
-          <span><i className="arrived" />到岗</span><span><i className="absent" />未到岗</span><span><i className="upcoming" />未到班</span>
+          <span><i className="arrived" />到岗</span><span><i className="absent" />未到岗</span><span><i className="upcoming" />未到班</span><span><i className="leave" />请假</span>
         </div>
       </div>
       {error && <div className="inline-error compact" role="alert">{error}</div>}
@@ -116,8 +119,8 @@ export function WeeklySchedule({ kind, memberId }: Props) {
                     left: `calc(${(lane / laneCount) * 100}% + 3px)`,
                     width: `calc(${100 / laneCount}% - 6px)`,
                   };
-                  return <article className={`week-event ${uniformState}`} style={style} key={shift.id} title={`${shift.label} ${shift.startTime}-${shift.endTime}`}>
-                    <strong>{shift.label}</strong><time>{shift.startTime}–{shift.endTime}</time>
+                  return <article className={`week-event ${uniformState} ${shift.workType}`} style={style} key={shift.id} title={`${shift.workType === "overtime" ? "加班" : shift.label} ${shift.startTime}-${shift.endTime}`}>
+                    <strong>{shift.workType === "overtime" ? "加班" : shift.label}</strong><time>{shift.startTime}–{shift.endTime}</time>
                     <div className="week-event-people">{slots.map((slot) => <PersonState key={slot.id} shift={shift} slot={slot} now={now} />)}</div>
                   </article>;
                 })}
@@ -136,13 +139,20 @@ function PersonState({ shift, slot, now }: { shift: ShiftView; slot: ShiftSlotVi
   const state = weeklySlotState(shift, slot, now);
   const scheduled = slot.scheduledMemberName ?? "空位";
   const actual = slot.actualMemberName;
-  const name = actual && actual !== scheduled ? `${actual}（替 ${scheduled}）` : actual ?? scheduled;
-  return <span className={`week-person ${state}`} title={`${name}：${STATE_LABELS[state]}`}>{name}</span>;
+  const role = slot.role === "staff" ? "办公" : slot.role === "overtime" ? "加班" : "负责";
+  const name = slot.leave && !slot.leave.replacementMemberId
+    ? `${scheduled}（请假）`
+    : actual && actual !== scheduled
+      ? `${actual}（替 ${scheduled}）`
+      : slot.leave?.replacementMemberName
+        ? `${slot.leave.replacementMemberName}（代 ${scheduled}）`
+        : actual ?? scheduled;
+  return <span className={`week-person ${state}`} title={`${role} · ${name}：${STATE_LABELS[state]}`}>{role}·{name}</span>;
 }
 
 function visibleSlots(shift: ShiftView, memberId: string): ShiftSlotView[] {
   if (!memberId) return shift.slots;
-  return shift.slots.filter((slot) => slot.scheduledMemberId === memberId || slot.actualMemberId === memberId);
+  return shift.slots.filter((slot) => slot.scheduledMemberId === memberId || slot.actualMemberId === memberId || slot.leave?.replacementMemberId === memberId);
 }
 
 function compactDate(date: string): string {

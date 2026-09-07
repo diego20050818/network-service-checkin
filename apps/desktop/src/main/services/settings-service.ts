@@ -1,4 +1,4 @@
-import type { Settings, StorageSettings } from "../../shared/contracts";
+import type { Settings, StorageSettings, UpdateMode, UpdateSettings } from "../../shared/contracts";
 import { formatLocalDateTimeKey } from "../../domain/time";
 import type { DatabaseStore } from "../database";
 
@@ -46,6 +46,7 @@ export class SettingsService {
           SET attendance_mode = ?, late_threshold_minutes = ?
           WHERE active = 1
             AND date || 'T' || start_time > ?
+            AND work_type = 'regular'
             AND NOT EXISTS (
               SELECT 1 FROM attendance_records ar WHERE ar.shift_id = shifts.id
             )
@@ -53,6 +54,28 @@ export class SettingsService {
         .run(settings.attendanceMode, settings.lateThresholdMinutes, formatLocalDateTimeKey(now));
     });
     return this.get();
+  }
+
+  getUpdates(): UpdateSettings {
+    const row = this.store.prepare("SELECT value_json FROM settings WHERE key = 'updates'").get() as
+      | { value_json: string }
+      | undefined;
+    if (!row) return { mode: "manual" };
+    try {
+      const value = JSON.parse(row.value_json) as Partial<UpdateSettings>;
+      return { mode: value.mode === "automatic" ? "automatic" : "manual" };
+    } catch {
+      return { mode: "manual" };
+    }
+  }
+
+  setUpdateMode(mode: UpdateMode, now = new Date()): UpdateSettings {
+    if (mode !== "manual" && mode !== "automatic") throw new Error("更新模式无效");
+    this.store.prepare(`
+      INSERT INTO settings(key, value_json, updated_at) VALUES('updates', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+    `).run(JSON.stringify({ mode }), now.toISOString());
+    return this.getUpdates();
   }
 
   getStorage(): StorageSettings {

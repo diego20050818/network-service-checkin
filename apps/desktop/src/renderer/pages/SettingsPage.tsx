@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BackupEntry, BootstrapData, SourceFileInfo, StorageOverview } from "../../shared/contracts";
+import type { BackupEntry, BootstrapData, SourceFileInfo, StorageOverview, UpdateMode, UpdateState } from "../../shared/contracts";
 import { PageHeader } from "../components";
 import { errorMessage } from "../App";
 
@@ -7,11 +7,15 @@ export function SettingsPage({ data, onChanged }: { data: BootstrapData; onChang
   const [startup, setStartup] = useState(data.startup);
   const [storage, setStorage] = useState<StorageOverview | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [updateMode, setUpdateMode] = useState<UpdateMode>(data.updateSettings.mode);
+  const [updateState, setUpdateState] = useState<UpdateState>(data.updateState);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => setStartup(data.startup), [data.startup]);
+  useEffect(() => { setUpdateMode(data.updateSettings.mode); setUpdateState(data.updateState); }, [data.updateSettings, data.updateState]);
+  useEffect(() => window.checkinApi.onUpdateStateChanged(setUpdateState), []);
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +103,32 @@ export function SettingsPage({ data, onChanged }: { data: BootstrapData; onChang
               });
             }}
           />
+        </div>
+        <div className="settings-row update-settings-row">
+          <div>
+            <strong>应用更新</strong>
+            <span>{updateState.message} · 当前版本 {updateState.currentVersion}{updateState.availableVersion ? ` · 可用版本 ${updateState.availableVersion}` : ""}</span>
+            {updateState.status === "downloading" && <progress value={updateState.progressPercent ?? 0} max={100}>{updateState.progressPercent ?? 0}%</progress>}
+          </div>
+          <div className="update-controls">
+            <select aria-label="更新模式" value={updateMode} disabled={!updateState.supported || Boolean(busy)} onChange={(event) => {
+              const mode = event.target.value as UpdateMode;
+              void run("update-mode", async () => {
+                const value = await window.checkinApi.setUpdateMode(mode);
+                setUpdateMode(value.mode);
+                await onChanged();
+                return mode === "automatic" ? "已开启自动检查和后台下载" : "已切换为手动更新";
+              });
+            }}>
+              <option value="manual">手动更新</option>
+              <option value="automatic">自动检查与下载</option>
+            </select>
+            <button disabled={!updateState.supported || Boolean(busy) || updateState.status === "checking" || updateState.status === "downloading"} onClick={() => void run("update-check", async () => { setUpdateState(await window.checkinApi.checkForUpdates()); return null; })}>检查更新</button>
+            {updateState.status === "available" && <button disabled={Boolean(busy)} onClick={() => void run("update-download", async () => { setUpdateState(await window.checkinApi.downloadUpdate()); return null; })}>下载</button>}
+            {updateState.status === "downloaded" && <button className="primary-button" disabled={Boolean(busy)} onClick={() => {
+              if (window.confirm("更新已下载。是否立即重启并安装？")) void window.checkinApi.installUpdate();
+            }}>重启并安装</button>}
+          </div>
         </div>
       </section>
 

@@ -33,11 +33,15 @@ test("桌面应用以隔离渲染进程启动并可访问主要页面", async ()
 
     await window.getByRole("button", { name: "看板", exact: true }).click();
     await expect(window.getByRole("heading", { name: "出勤与计薪工时" })).toBeVisible();
+    await window.getByRole("button", { name: "请假与加班", exact: true }).click();
+    await expect(window.getByRole("heading", { name: "请假与加班" })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "加班安排", exact: true })).toBeVisible();
     await window.getByRole("button", { name: "输出本月绩效文件", exact: true }).click();
     await expect(window.getByRole("heading", { name: "输出本月绩效文件" })).toBeVisible();
     await window.getByRole("button", { name: "设置", exact: true }).click();
     await expect(window.getByRole("heading", { name: "文件存放位置" })).toBeVisible();
     await expect(window.getByRole("heading", { name: "备份管理" })).toBeVisible();
+    await expect(window.getByLabel("更新模式")).toBeDisabled();
   } finally {
     await application.close();
     await rm(userData, { recursive: true, force: true });
@@ -116,11 +120,23 @@ test("无卡片日历看板和文件编辑区适配 1100×700 与 1440×900", as
     await expect(window.getByLabel("到岗状态图例")).toContainText("到岗未到岗未到班");
     await expect(window.locator(".weekly-schedule-card")).toHaveCount(0);
     await expect(window.locator(".week-person.arrived")).toContainText("甲");
-    await expect(window.getByTitle("乙：未到岗").first()).toBeVisible();
+    await expect(window.locator('[title*="乙：未到岗"]').first()).toBeVisible();
     if (currentHour < 23) await expect(window.locator(".week-person.upcoming").first()).toBeVisible();
     if (currentHour >= 4) expect(await window.getByLabel("周班表日历").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     expect(await window.evaluate(() => document.documentElement.scrollWidth <= globalThis.innerWidth)).toBe(true);
     await window.screenshot({ path: join(screenshotDirectory, "dashboard-settings-1100x700.png"), fullPage: true });
+
+    await window.getByRole("button", { name: "请假与加班", exact: true }).click();
+    const firstAdjustment = window.locator(".adjustment-shift-card").first();
+    await firstAdjustment.getByLabel("添加办公人员").selectOption({ label: "丙" });
+    await firstAdjustment.getByRole("button", { name: "添加", exact: true }).click();
+    await expect(window.getByText("办公人员已加入本次班次")).toBeVisible();
+    await window.locator('button:not([disabled])', { hasText: "办理请假" }).first().click();
+    await window.getByRole("button", { name: "保存", exact: true }).first().click();
+    await expect(window.getByText(/请假 · 无代班/).first()).toBeVisible();
+    await window.getByLabel("加班人员").selectOption({ label: "甲" });
+    await window.getByRole("button", { name: "添加加班", exact: true }).click();
+    await expect(window.getByText("加班安排已保存，签到后才会计薪")).toBeVisible();
 
     await window.getByRole("button", { name: "输出本月绩效文件", exact: true }).click();
     const performanceItem = window.locator(".file-item").filter({ hasText: "全员绩效考核表" });

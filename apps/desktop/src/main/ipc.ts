@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { CheckinApi, ReportDraft } from "../shared/contracts";
 import type { DatabaseStore } from "./database";
 import type { AttendanceService } from "./services/attendance-service";
+import type { AdjustmentService } from "./services/adjustment-service";
 import type { BackupService } from "./services/backup-service";
 import type { DashboardService } from "./services/dashboard-service";
 import type { MemberService } from "./services/member-service";
@@ -13,11 +14,13 @@ import type { ScheduleService } from "./services/schedule-service";
 import type { SettingsService } from "./services/settings-service";
 import type { StartupService } from "./services/startup-service";
 import type { StorageService } from "./services/storage-service";
+import type { UpdateService } from "./services/update-service";
 import { IPC_CHANNELS } from "../shared/ipc-channels";
 
 export interface ServiceContext {
   store: DatabaseStore;
   attendance: AttendanceService;
+  adjustments: AdjustmentService;
   dashboard: DashboardService;
   members: MemberService;
   schedule: ScheduleService;
@@ -26,6 +29,7 @@ export interface ServiceContext {
   storage: StorageService;
   reports: ReportService;
   backup: BackupService;
+  updates: UpdateService;
   dataDirectory: string;
   templateDirectory: string;
 }
@@ -33,7 +37,8 @@ export interface ServiceContext {
 const id = z.string().uuid();
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const optionalIsoDateTime = z.string().datetime({ offset: true }).optional();
-const kind = z.enum(["desk", "maintenance", "weekend", "all"]);
+const kind = z.enum(["desk", "maintenance", "weekend", "overtime", "all"]);
+const time = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 
 const scoreSchema = z.object({
   attendance: z.number().min(0).max(30).nullable(),
@@ -118,6 +123,8 @@ export function registerIpcHandlers(context: ServiceContext): void {
       nextShifts: shifts.next,
       todayRecords: context.attendance.listRecords({ startDate: localDate, endDate: localDate }),
       settings: context.settings.get(),
+      updateSettings: context.updates.mode(),
+      updateState: context.updates.state(),
       startup: context.startup.get(),
       dataDirectory: context.dataDirectory,
     };
@@ -169,6 +176,27 @@ export function registerIpcHandlers(context: ServiceContext): void {
         .parse(filters),
     ),
   );
+
+  const adjustmentFilters = z.object({ startDate: isoDate, endDate: isoDate, includeCancelled: z.boolean().optional() });
+  const leaveInput = z.object({
+    slotId: id,
+    replacementMemberId: id.nullable().optional(),
+    reason: z.string().max(500).optional(),
+  });
+  const leaveUpdate = z.object({ replacementMemberId: id.nullable().optional(), reason: z.string().max(500).optional() });
+  invoke(IPC_CHANNELS.leaves, async (filters) => context.adjustments.listLeaves(adjustmentFilters.parse(filters)));
+  invoke(IPC_CHANNELS.createLeave, async (input) => context.adjustments.createLeave(leaveInput.parse(input)));
+  invoke(IPC_CHANNELS.updateLeave, async (leaveId, input) => context.adjustments.updateLeave(id.parse(leaveId), leaveUpdate.parse(input)));
+  invoke(IPC_CHANNELS.cancelLeave, async (leaveId) => context.adjustments.cancelLeave(id.parse(leaveId)));
+  invoke(IPC_CHANNELS.addShiftStaff, async (input) => context.adjustments.addShiftStaff(
+    z.object({ shiftId: id, memberId: id }).parse(input),
+  ));
+  invoke(IPC_CHANNELS.removeShiftStaff, async (slotId) => context.adjustments.removeShiftStaff(id.parse(slotId)));
+  invoke(IPC_CHANNELS.overtime, async (filters) => context.adjustments.listOvertime(adjustmentFilters.parse(filters)));
+  invoke(IPC_CHANNELS.createOvertime, async (input) => context.adjustments.createOvertime(
+    z.object({ memberId: id, date: isoDate, startTime: time, endTime: time, note: z.string().max(500).optional() }).parse(input),
+  ));
+  invoke(IPC_CHANNELS.cancelOvertime, async (slotId) => context.adjustments.cancelOvertime(id.parse(slotId)));
 
   invoke(IPC_CHANNELS.importSchedule, async (input) => {
     const parsed = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), effectiveDate: isoDate }).parse(input);
@@ -233,6 +261,12 @@ export function registerIpcHandlers(context: ServiceContext): void {
         .parse(settings),
     ),
   );
+  invoke(IPC_CHANNELS.updateMode, async () => context.updates.mode());
+  invoke(IPC_CHANNELS.setUpdateMode, async (mode) => context.updates.setMode(z.enum(["manual", "automatic"]).parse(mode)));
+  invoke(IPC_CHANNELS.updateState, async () => context.updates.state());
+  invoke(IPC_CHANNELS.checkUpdate, async () => context.updates.check());
+  invoke(IPC_CHANNELS.downloadUpdate, async () => context.updates.download());
+  invoke(IPC_CHANNELS.installUpdate, async () => context.updates.install());
   invoke(IPC_CHANNELS.startupSettings, async () => context.startup.get());
   invoke(IPC_CHANNELS.setStartupEnabled, async (enabled) => context.startup.setEnabled(z.boolean().parse(enabled)));
   invoke(IPC_CHANNELS.storageOverview, async () => context.storage.overview());

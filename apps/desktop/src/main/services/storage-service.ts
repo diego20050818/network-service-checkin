@@ -37,7 +37,7 @@ export class StorageService {
       .prepare(`
         SELECT si.source_name, si.source_path, si.month, si.effective_date, si.imported_at
         FROM schedule_imports si
-        WHERE EXISTS (
+        WHERE si.source_type = 'file' AND EXISTS (
           SELECT 1 FROM shifts s WHERE s.schedule_import_id = si.id AND s.active = 1
         )
         ORDER BY si.month DESC, si.imported_at DESC

@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { DatabaseStore } from "./database";
 import { registerIpcHandlers, removeIpcHandlers, type ServiceContext } from "./ipc";
 import { AttendanceService } from "./services/attendance-service";
+import { AdjustmentService } from "./services/adjustment-service";
 import { BackupService } from "./services/backup-service";
 import { DashboardService } from "./services/dashboard-service";
 import { MemberService } from "./services/member-service";
@@ -12,6 +13,8 @@ import { ScheduleService } from "./services/schedule-service";
 import { SettingsService } from "./services/settings-service";
 import { StartupService } from "./services/startup-service";
 import { StorageService } from "./services/storage-service";
+import { UpdateService } from "./services/update-service";
+import { IPC_CHANNELS } from "../shared/ipc-channels";
 
 let mainWindow: BrowserWindow | null = null;
 let services: ServiceContext | null = null;
@@ -43,12 +46,18 @@ async function createServices(): Promise<ServiceContext> {
     setLoginItemSettings: (options) => app.setLoginItemSettings(options),
   });
   const attendance = new AttendanceService(store, members);
+  const adjustments = new AdjustmentService(store, members, attendance);
   const dashboard = new DashboardService(store, attendance, members);
   const schedule = new ScheduleService(store, members, scheduleSourceDirectory);
   const reports = new ReportService(store, dashboard, members, settings, templateDirectory);
   const backup = new BackupService(store, () => settings.getStorage().backupDirectory, templateDirectory, scheduleSourceDirectory, memberSourceDirectory);
   const storage = new StorageService(store, settings, { dataDirectory, templateDirectory, scheduleSourceDirectory, memberSourceDirectory });
-  return { store, members, settings, startup, attendance, dashboard, schedule, reports, backup, storage, dataDirectory, templateDirectory };
+  const updates = new UpdateService(settings, {
+    packaged: app.isPackaged,
+    platform: process.platform,
+    currentVersion: app.getVersion(),
+  });
+  return { store, members, settings, startup, attendance, adjustments, dashboard, schedule, reports, backup, storage, updates, dataDirectory, templateDirectory };
 }
 
 async function createWindow(): Promise<void> {
@@ -81,9 +90,11 @@ async function createWindow(): Promise<void> {
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   services = await createServices();
+  services.updates.setNotifier((state) => mainWindow?.webContents.send(IPC_CHANNELS.updateStateChanged, state));
   registerIpcHandlers(services);
   await services.backup.ensureDaily().catch((error) => console.error("每日备份失败", error));
   await createWindow();
+  setTimeout(() => { void services?.updates.startAutomaticCheck(); }, 3_000);
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) await createWindow();
   });

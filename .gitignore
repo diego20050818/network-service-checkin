@@ -39,3 +39,4 @@ apps/desktop/.test-data/
 Thumbs.db
 .idea/
 .vscode/
+.codegraph

@@ -295,11 +295,13 @@ export class ReportService {
         tables: [
           {
             title: "计薪记录",
-            headers: ["姓名", "日期", "班次", "开始", "结束", "计薪工时（h）"],
+            headers: ["姓名", "日期", "班次", "类型", "角色", "开始", "结束", "计薪工时（h）"],
             rows: snapshot.records.map((record) => [
               record.actualMemberName,
               record.date,
               record.label,
+              record.workType === "overtime" ? "加班" : "正式班",
+              record.slotRole === "staff" ? "办公人员" : record.slotRole === "overtime" ? "加班人员" : "负责人",
               record.startTime,
               record.endTime,
               `${hoursLabel(record.paidMinutes)}h`,
@@ -470,7 +472,8 @@ export class ReportService {
         FROM shifts s
         JOIN shift_slots ss ON ss.shift_id = s.id
         LEFT JOIN members m ON m.id = ss.scheduled_member_id
-        WHERE s.active = 1 AND s.date BETWEEN ? AND ? AND ss.is_vacant = 0
+        WHERE s.active = 1 AND s.work_type = 'regular'
+          AND s.date BETWEEN ? AND ? AND ss.is_vacant = 0 AND ss.slot_source = 'imported'
         ORDER BY s.date, s.start_time, s.kind, ss.position
       `)
       .all(startDate, endDate) as unknown as Array<{
@@ -684,17 +687,19 @@ export class ReportService {
     summary.views = [{ state: "frozen", ySplit: 2 }];
 
     const details = workbook.addWorksheet("签到明细", { views: [{ state: "frozen", ySplit: 1 }] });
-    details.addRow(["班次日期", "班次", "计划开始", "计划结束", "原排班人", "实际人员", "真实打卡时间", "迟到状态", "来源", "计薪工时（h）"]);
+    details.addRow(["班次日期", "班次", "工时类型", "人员角色", "计划开始", "计划结束", "原排班人", "实际人员", "真实打卡时间", "迟到状态", "来源", "计薪工时（h）"]);
     for (const record of records) {
       details.addRow([
         record.date,
         record.label,
+        record.workType === "overtime" ? "加班" : "正式班",
+        record.slotRole === "staff" ? "办公人员" : record.slotRole === "overtime" ? "加班人员" : "负责人",
         record.startTime,
         record.endTime,
         record.scheduledMemberName ?? "空位",
         record.actualMemberName,
         record.punchTime ? new Date(record.punchTime) : "",
-        record.lateStatus === "late" ? "迟到" : record.lateStatus === "manual_unjudged" ? "人工补记/未判定" : "正常",
+        record.workType === "overtime" ? "不参与迟到" : record.lateStatus === "late" ? "迟到" : record.lateStatus === "manual_unjudged" ? "人工补记/未判定" : "正常",
         record.source === "manual" ? "人工补记" : "普通签到",
         record.paidMinutes / 60,
       ]);
@@ -705,11 +710,11 @@ export class ReportService {
     });
     details.getRow(1).font = { name: "Microsoft YaHei", bold: true, color: { argb: "FFFFFFFF" } };
     details.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1A73E8" } };
-    details.columns.forEach((column, index) => { column.width = [14, 18, 12, 12, 16, 16, 20, 18, 14, 14][index] ?? 14; });
-    details.getColumn(10).numFmt = '0.##"h"';
+    details.columns.forEach((column, index) => { column.width = [14, 18, 12, 14, 12, 12, 16, 16, 20, 18, 14, 14][index] ?? 14; });
+    details.getColumn(12).numFmt = '0.##"h"';
     details.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-    details.pageSetup.printArea = `A1:J${details.rowCount}`;
-    details.getColumn(7).numFmt = "yyyy-mm-dd hh:mm";
+    details.pageSetup.printArea = `A1:L${details.rowCount}`;
+    details.getColumn(9).numFmt = "yyyy-mm-dd hh:mm";
     await workbook.xlsx.writeFile(outputPath);
   }
 
@@ -726,7 +731,8 @@ export class ReportService {
     const sources = this.store.prepare(`
       SELECT DISTINCT si.source_path, si.source_name, si.imported_at
       FROM shifts s JOIN schedule_imports si ON si.id = s.schedule_import_id
-      WHERE s.active = 1 AND s.date BETWEEN ? AND ?
+      WHERE s.active = 1 AND s.work_type = 'regular' AND si.source_type = 'file'
+        AND s.date BETWEEN ? AND ?
       ORDER BY si.imported_at
     `).all(draft.startDate, draft.endDate) as unknown as Array<{ source_path: string; source_name: string; imported_at: string }>;
     for (const source of sources) {

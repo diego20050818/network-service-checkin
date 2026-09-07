@@ -8,7 +8,7 @@ npm.cmd run verify
 npm.cmd run package:win
 ```
 
-`electron-builder` 生成 x64 NSIS 安装包。模板通过 `extraResources` 随安装包发布；数据库和导入源文件副本写入 Electron `userData/data`，不写安装目录。默认导出目录和备份目录可在“设置”中更改，数据库目录只读展示，避免运行中搬移 SQLite。
+`electron-builder` 生成 x64 NSIS 安装包、`.blockmap` 和 `latest.yml`。模板通过 `extraResources` 随安装包发布；数据库和导入源文件副本写入 Electron `userData/data`，不写安装目录。
 
 当前开发构建未配置代码签名证书，安装包的 Authenticode 状态为 `NotSigned`。正式分发前应使用组织证书签名，并在目标机验证签名链和 SmartScreen 表现。
 
@@ -21,7 +21,14 @@ npm.cmd run package:win
 
 ## 升级
 
-升级前在“设置 > 备份管理”执行“立即备份”。数据库迁移只允许向前追加且在事务中执行；模板版本和哈希随导出批次记录。安装程序不得删除 `userData`。
+升级前在“设置 > 备份管理”执行“立即备份”。数据库迁移只允许向前追加且在事务中执行；0.4.0 的 schema v2 数据库和 manifest v2 备份可由 0.5.0 自动迁移，备份清单格式不变。0.5.0 备份不承诺可交给旧版恢复。
+
+0.4.0 没有更新器且对应 Release 没有 `latest.yml`，必须先手动安装 0.5.0。此后可在设置中选择：
+
+- 手动：检查更新、下载、确认重启安装；默认值，不主动联网。
+- 自动：窗口启动完成后检查一次，发现稳定版后后台下载，完成后仍须确认重启。
+
+发布 Release 时必须同时上传 `network-service-checkin-<版本>-x64.exe`、同名 `.blockmap` 和 `latest.yml`。发布前校验 `latest.yml` 的版本、安装包文件名和 SHA-512。
 
 ## 回滚
 

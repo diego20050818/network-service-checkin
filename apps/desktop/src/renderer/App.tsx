@@ -6,12 +6,14 @@ import { DataPage } from "./pages/DataPage";
 import { RecordsPage } from "./pages/RecordsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { AdjustmentsPage } from "./pages/AdjustmentsPage";
 
-export type Page = "checkin" | "dashboard" | "reports" | "data" | "records" | "settings";
+export type Page = "checkin" | "dashboard" | "adjustments" | "reports" | "data" | "records" | "settings";
 
 const NAVIGATION: Array<{ key: Page; label: string; auxiliary?: boolean }> = [
   { key: "checkin", label: "签到" },
   { key: "dashboard", label: "看板" },
+  { key: "adjustments", label: "请假与加班" },
   { key: "reports", label: "输出本月绩效文件" },
   { key: "records", label: "签到记录", auxiliary: true },
   { key: "data", label: "排班与成员", auxiliary: true },
@@ -79,6 +81,7 @@ export function App() {
           <CheckInPage data={bootstrap} onChanged={refresh} onOpenRecords={() => setPage("records")} onOpenData={() => setPage("data")} />
         )}
         {!loading && bootstrap && page === "dashboard" && <DashboardPage members={bootstrap.members} />}
+        {!loading && bootstrap && page === "adjustments" && <AdjustmentsPage members={bootstrap.members} onChanged={refresh} onOpenRecords={() => setPage("records")} />}
         {!loading && bootstrap && page === "reports" && <ReportsPage members={bootstrap.members} />}
         {!loading && bootstrap && page === "records" && <RecordsPage members={bootstrap.members} onChanged={refresh} />}
         {!loading && bootstrap && page === "data" && <DataPage data={bootstrap} onChanged={refresh} />}
