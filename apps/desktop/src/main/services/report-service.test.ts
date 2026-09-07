@@ -124,4 +124,38 @@ describe("ReportService", () => {
       store.close();
     }
   });
+
+  it("未签到的未来加班不计入工时表与工资考核，补记后计入", () => {
+    const store = new DatabaseStore(":memory:");
+    try {
+      const members = new MemberService(store);
+      const settings = new SettingsService(store);
+      const attendance = new AttendanceService(store, members);
+      const adjustments = new AdjustmentService(store, members, attendance);
+      const dashboard = new DashboardService(store, attendance, members);
+      const importId = addScheduleImport(store);
+      const desk = addShift(store, members, { importId, date: "2026-09-07", kind: "desk", startTime: "08:00", endTime: "10:00", paidMinutes: 120, people: ["甲"] });
+      attendance.checkIn(desk.shiftId, [{ slotId: desk.slotIds[0]!, memberId: desk.memberIds.甲! }], "2026-09-07T08:30:00+08:00");
+      const booked = adjustments.createOvertime({ memberId: desk.memberIds.甲!, date: "2026-09-20", startTime: "18:00", endTime: "20:00", note: "预约加班" });
+      const service = new ReportService(store, dashboard, members, settings, resolve("resources/templates"));
+      const draft = { ...defaultReportDraft(2026, 9), filler: "张三" };
+
+      // 仍未签到时：工时表只剩正式班，工资考核工作量不含加班（120min = 2h）
+      let preview = service.preview(draft);
+      const timeRecordRows = preview.files.find((file) => file.key === "timeRecord")?.tables[0]?.rows ?? [];
+      expect(timeRecordRows.some((row) => row[3] === "加班")).toBe(false);
+      const wageRows = preview.files.find((file) => file.key === "wageAssessment")?.tables[0]?.rows ?? [];
+      expect(wageRows.find((row) => row.includes("甲"))?.[3]).toBe("2h");
+
+      // 人工补记后：工时表与工资考核均计入（120+120min = 4h）
+      attendance.addManual({ slotId: booked.slotId, memberId: desk.memberIds.甲!, historicalPunchTime: "2026-09-20T18:00:00+08:00" });
+      preview = service.preview(draft);
+      const timeRecordRows2 = preview.files.find((file) => file.key === "timeRecord")?.tables[0]?.rows ?? [];
+      expect(timeRecordRows2.some((row) => row[3] === "加班")).toBe(true);
+      const wageRows2 = preview.files.find((file) => file.key === "wageAssessment")?.tables[0]?.rows ?? [];
+      expect(wageRows2.find((row) => row.includes("甲"))?.[3]).toBe("4h");
+    } finally {
+      store.close();
+    }
+  });
 });

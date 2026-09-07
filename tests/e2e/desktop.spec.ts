@@ -136,7 +136,7 @@ test("无卡片日历看板和文件编辑区适配 1100×700 与 1440×900", as
     await expect(window.getByText(/请假 · 无代班/).first()).toBeVisible();
     await window.getByLabel("加班人员").selectOption({ label: "甲" });
     await window.getByRole("button", { name: "添加加班", exact: true }).click();
-    await expect(window.getByText("加班安排已保存，签到后才会计薪")).toBeVisible();
+    await expect(window.getByText("加班已预约，签到或人工补记后计入薪酬工时")).toBeVisible();
 
     await window.getByRole("button", { name: "输出本月绩效文件", exact: true }).click();
     const performanceItem = window.locator(".file-item").filter({ hasText: "全员绩效考核表" });

@@ -1,6 +1,6 @@
 {
   "name": "network-service-checkin",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "网络服务小组离线签到、看板与月报导出桌面应用",
   "workspaces": [

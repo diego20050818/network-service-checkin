@@ -10,6 +10,7 @@ export function AdjustmentsPage({ members, onChanged, onOpenRecords }: {
   onOpenRecords(): void;
 }) {
   const [date, setDate] = useState(formatLocalDate(new Date()));
+  const [overtimeDate, setOvertimeDate] = useState(formatLocalDate(new Date()));
   const [shifts, setShifts] = useState<ShiftView[]>([]);
   const [leaves, setLeaves] = useState<LeaveRecordView[]>([]);
   const [overtime, setOvertime] = useState<OvertimeEntryView[]>([]);
@@ -22,7 +23,7 @@ export function AdjustmentsPage({ members, onChanged, onOpenRecords }: {
       const [shiftValues, leaveValues, overtimeValues] = await Promise.all([
         window.checkinApi.getShiftsForDate(date),
         window.checkinApi.listLeaves({ startDate: date, endDate: date, includeCancelled: true }),
-        window.checkinApi.listOvertime({ startDate: date, endDate: date, includeCancelled: true }),
+        window.checkinApi.listOvertime({ startDate: overtimeDate, endDate: overtimeDate, includeCancelled: true }),
       ]);
       setShifts(shiftValues.filter((shift) => shift.workType === "regular"));
       setLeaves(leaveValues);
@@ -31,7 +32,7 @@ export function AdjustmentsPage({ members, onChanged, onOpenRecords }: {
     } catch (cause) {
       setError(errorMessage(cause));
     }
-  }, [date]);
+  }, [date, overtimeDate]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -57,7 +58,7 @@ export function AdjustmentsPage({ members, onChanged, onOpenRecords }: {
 
     <Card className="filter-card adjustment-date-filter">
       <label>办理日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-      <span>选择日期后可办理请假、增员和加班安排。</span>
+      <span>选择日期后可办理正式班次的请假和增员；加班日期请在下方独立选择。</span>
     </Card>
 
     <section className="dashboard-section">
@@ -69,7 +70,7 @@ export function AdjustmentsPage({ members, onChanged, onOpenRecords }: {
       )}
     </section>
 
-    <OvertimePanel date={date} members={members} entries={overtime} busy={busy} mutate={mutate} onOpenRecords={onOpenRecords} />
+    <OvertimePanel date={overtimeDate} onDateChange={setOvertimeDate} members={members} entries={overtime} busy={busy} mutate={mutate} onOpenRecords={onOpenRecords} />
 
     {leaves.some((leave) => leave.status === "cancelled") && <section className="dashboard-section">
       <div className="card-title-row"><div><h2>已撤销请假</h2><p>历史记录保留，不影响当前统计。</p></div></div>
@@ -147,8 +148,9 @@ function LeaveRow({ shift, slot, members, busy, mutate }: {
   </div>;
 }
 
-function OvertimePanel({ date, members, entries, busy, mutate, onOpenRecords }: {
+function OvertimePanel({ date, onDateChange, members, entries, busy, mutate, onOpenRecords }: {
   date: string;
+  onDateChange(date: string): void;
   members: Member[];
   entries: OvertimeEntryView[];
   busy: string;
@@ -161,7 +163,11 @@ function OvertimePanel({ date, members, entries, busy, mutate, onOpenRecords }: 
   const [note, setNote] = useState("");
   const ended = (entry: OvertimeEntryView) => `${entry.date}T${entry.endTime}` <= localDateTimeKey(new Date());
   return <section className="dashboard-section">
-    <div className="card-title-row"><div><h2>加班安排</h2><p>只有签到或人工补记后才计入薪酬工时；加班不参与迟到和到岗率。</p></div></div>
+    <div className="card-title-row"><div><h2>加班安排</h2><p>可预约未来日期；只有签到或人工补记后才计入薪酬工时并进入月报，加班不参与迟到和到岗率。</p></div></div>
+    <div className="adjustment-date-filter">
+      <label>加班日期<input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} /></label>
+      <span>可预约未来日期；到点实时签到或事后人工补记后才计薪。</span>
+    </div>
     <div className="overtime-form">
       <label>加班人员<select value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">选择成员</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
       <label>开始时间<input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></label>
@@ -170,9 +176,9 @@ function OvertimePanel({ date, members, entries, busy, mutate, onOpenRecords }: 
       <button className="primary-button" disabled={!memberId || !startTime || !endTime || Boolean(busy)} onClick={() => void mutate("overtime-create", async () => {
         await window.checkinApi.createOvertime({ memberId, date, startTime, endTime, note });
         setMemberId(""); setNote("");
-      }, "加班安排已保存，签到后才会计薪")}>添加加班</button>
+      }, "加班已预约，签到或人工补记后计入薪酬工时")}>添加加班</button>
     </div>
-    {entries.length === 0 ? <EmptyState title="当日没有加班安排" description="可在上方指定成员和自定义时段。" /> : <div className="table-scroll"><table>
+    {entries.length === 0 ? <EmptyState title="该日期没有加班安排" description="可在上方选择日期并指定成员和时段。" /> : <div className="table-scroll"><table>
       <thead><tr><th>人员</th><th>时段</th><th>工时</th><th>备注</th><th>状态</th><th>操作</th></tr></thead>
       <tbody>{entries.map((entry) => <tr className={entry.status === "cancelled" ? "muted-row" : ""} key={entry.slotId}>
         <td><strong>{entry.memberName}</strong></td><td>{entry.startTime}-{entry.endTime}</td><td>{hoursLabel(entry.paidMinutes)}h</td><td>{entry.note || "—"}</td>

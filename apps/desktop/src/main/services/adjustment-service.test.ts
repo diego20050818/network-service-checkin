@@ -51,6 +51,31 @@ describe("AdjustmentService", () => {
     expect(() => adjustments.cancelOvertime(first.slotId)).toThrow("请先撤销签到");
   });
 
+  it("加班可预约未来日期：签到前不计薪，签到后计入", () => {
+    const member = members.ensureMinimal("甲").member;
+    const booked = adjustments.createOvertime({ memberId: member.id, date: "2026-09-20", startTime: "18:00", endTime: "20:00", note: "提前预约" });
+    expect(booked.status).toBe("planned");
+
+    // 预约当日（现在 9/8）：不计薪、无签到记录
+    const before = dashboard.snapshot({ startDate: "2026-09-01", endDate: "2026-09-30", now: "2026-09-08T12:00:00+08:00" });
+    expect(before.metrics.overtimeMinutes).toBe(0);
+    expect(before.records).toHaveLength(0);
+    expect(before.members.find((item) => item.memberId === member.id)?.totalMinutes).toBe(0);
+
+    // 未来日期已过、仍未签到：不计薪、待补记
+    const after = dashboard.snapshot({ startDate: "2026-09-20", endDate: "2026-09-20", now: "2026-09-21T09:00:00+08:00" });
+    expect(after.metrics.overtimeMinutes).toBe(0);
+    expect(after.records).toHaveLength(0);
+
+    // 到那天签到后计薪
+    attendance.checkIn(booked.shiftId, [{ slotId: booked.slotId, memberId: member.id }], "2026-09-20T18:00:00+08:00");
+    const done = dashboard.snapshot({ startDate: "2026-09-20", endDate: "2026-09-20", now: "2026-09-20T21:00:00+08:00" });
+    expect(done.metrics).toMatchObject({ paidMinutes: 120, overtimeMinutes: 120 });
+    expect(done.records[0]).toMatchObject({ workType: "overtime", slotRole: "overtime", paidMinutes: 120 });
+    expect(done.members.find((item) => item.memberId === member.id)).toMatchObject({ overtimeMinutes: 120, totalMinutes: 120 });
+    expect(() => adjustments.cancelOvertime(booked.slotId)).toThrow("请先撤销签到");
+  });
+
   it("办公人员只加入单次班次且无记录时可移除", () => {
     const importId = addScheduleImport(store);
     const shift = addShift(store, members, { importId, date: "2026-09-07", kind: "desk", startTime: "08:00", endTime: "10:00", paidMinutes: 120, people: ["甲"] });

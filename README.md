@@ -4,7 +4,7 @@
 
 ```
 平台     Windows 10/11 x64（NSIS 安装包）        运行时    Electron + React + TypeScript
-本地存储  SQLite                             版本      0.5.0
+本地存储  SQLite                             版本      0.5.1
 协议     MIT 开源
 ```
 
@@ -28,7 +28,7 @@
 - **签到规则**：只签到、不签退；`开始 ≤ 打卡 < 结束` 计完整班次分钟数；多人维修班分次签到；临时替班与重叠班独立计薪。
 - **签到纠错**：更正人员、撤销 / 恢复误签、带来源的人工补记；唯一索引保证连点不重复。
 - **请假与代班**：未来或进行中班次可指定代班；已结束旷班可补登记请假。无代班请假豁免缺勤，有代班时由指定人员签到。
-- **加班与单次增员**：加班可自定义同日时段，签到或补记后计薪；正式班次可临时添加办公人员。
+- **加班与单次增员**：加班可预约任意日期（含未来），签到或补记后计薪；正式班次可临时添加办公人员。
 - **周班表（看板）**：Google Calendar 式连续周时间网格；绿色 = 到岗、红色 = 未到岗、灰色 = 未到班，自动定位当前时段。
 - **工时与统计**：分别汇总常规、加班和总工时，以及请假、到岗率、迟到和未签到席位。
 - **导入排班与成员**：支持三块布局排班 Excel 与成员信息 Excel 导入，随包提供空白模板，导入后留存源文件副本。
@@ -86,13 +86,13 @@
 
 - 查看本月或自定义周期的成员工时汇总、签到明细、到岗率、迟到次数与已结束未签到席位。
 - 宽松模式默认不判迟到；迟到模式晚于「开始 + 阈值」才标迟到，且**不扣工时**。
-- 加班不参与到岗率、迟到或缺勤；只有签到或人工补记后才按完整计划时长计入加班与总工时。
+- 加班可预约未来日期，不参与到岗率、迟到或缺勤；只有签到或人工补记后才按完整计划时长计入加班与总工时。
 
 ### 5. 请假、加班与单次增员
 
 - 在「**请假与加班**」选择日期。无代班请假不会计入到岗率分母；指定代班后，只能由该代班人签到。
 - 已结束且未签到的班次可补登记无代班请假；已结束班次不能再指定代班人。
-- 加班只支持同一自然日且结束时间晚于开始时间。历史加班先建立安排，再到「签到记录」人工补记。
+- 加班可在「加班日期」预约未来日期，且结束时间晚于开始时间；到点后实时签到或事后人工补记才计薪。历史加班先建立安排，再到「签到记录」人工补记。
 - “添加办公人员”只影响当前所选的单次班次；有签到或请假的手工席位必须先撤销相关记录才能移除。
 
 ### 6. 月底月报导出
@@ -212,15 +212,15 @@ output/                程序与脚本导出的文件（git 忽略）
 
 ## 版本与发布
 
-版本遵循 **语义化版本**；当前为 `0.5.0`。发布流程：
+版本遵循 **语义化版本**；当前为 `0.5.1`。发布流程：
 
 1. `npm.cmd run verify` 通过全部门禁。
 2. `npm.cmd run package:win` 生成 x64 NSIS 安装包。
 3. 打标签并推送：
 
    ```powershell
-   git tag -a v0.5.0 -m "v0.5.0"
-   git push origin v0.5.0
+   git tag -a v0.5.1 -m "v0.5.1"
+   git push origin v0.5.1
    ```
 
 4. 在 GitHub Release 同时上传 `.exe`、`.blockmap` 和 `latest.yml`，可选附带手册 PDF。
@@ -231,29 +231,29 @@ output/                程序与脚本导出的文件（git 忽略）
 
 ## Release 发布指南
 
-发布新版本（以当前 `0.5.0` 为例）：
+发布新版本（以当前 `0.5.1` 为例）：
 
 1. **门禁**：`npm.cmd run verify`（typecheck + test + build）全通过。
 2. **打包**：`npm.cmd run package:win` 生成安装包、`.blockmap` 与 `latest.yml`，并校验元数据中的版本、文件名和 SHA-512。
 3. **打标签并推送**：
 
    ```powershell
-   git tag -a v0.5.0 -m "v0.5.0"
-   git push origin v0.5.0
+   git tag -a v0.5.1 -m "v0.5.1"
+   git push origin v0.5.1
    ```
 
-4. **建 Release**：标题使用 `v0.5.0`；附件必须带 `.exe`、`.blockmap` 与 `latest.yml`，否则客户端无法自动更新。
+4. **建 Release**：标题使用 `v0.5.1`；附件必须带 `.exe`、`.blockmap` 与 `latest.yml`，否则客户端无法自动更新。
 
 命令行方式（已登录 `gh`）：
 
 ```powershell
-gh release create v0.5.0 -t "v0.5.0" -n "见 CHANGELOG.md" `
-  "apps/desktop/release/network-service-checkin-0.5.0-x64.exe" `
-  "apps/desktop/release/network-service-checkin-0.5.0-x64.exe.blockmap" `
+gh release create v0.5.1 -t "v0.5.1" -n "见 CHANGELOG.md" `
+  "apps/desktop/release/network-service-checkin-0.5.1-x64.exe" `
+  "apps/desktop/release/network-service-checkin-0.5.1-x64.exe.blockmap" `
   "apps/desktop/release/latest.yml"
 ```
 
-> `v0.4.0` Release 没有 `latest.yml`，且 0.4.0 客户端没有更新器，所以需要手动安装一次 0.5.0。当前安装包仍为 `NotSigned`，可能触发 SmartScreen；代码签名不属于本版本已完成能力。
+> `v0.4.0` Release 没有 `latest.yml`，且 0.4.0 客户端没有更新器，故从 0.4.0 升级需先手动安装任一 0.5.x（如 0.5.1），此后可在设置中选择自动或手动更新。当前安装包仍为 `NotSigned`，可能触发 SmartScreen；代码签名不属于本版本已完成能力。
 
 ---
 

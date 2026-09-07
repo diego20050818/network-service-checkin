@@ -1,6 +1,6 @@
 {
   "name": "@network-service/checkin-desktop",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "author": "网络服务小组",
   "description": "网络服务小组签到与月报桌面应用",
