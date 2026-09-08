@@ -21,9 +21,9 @@ npm.cmd run package:win
 
 ## 升级
 
-### 0.6.0 发布候选
+### 0.6.0 稳定版
 
-当前候选安装包位于 `apps/desktop/release/candidate-0.6.0/`，尚未发布稳定更新。应用标识和 userData 目录不变。0.5.x 在稳定版验收并发布后可由原更新器升级；0.4.0 可直接手动覆盖安装 0.6.0。
+发布构建在本地位于 `apps/desktop/release/candidate-0.6.0/`，正式文件由 GitHub Release v0.6.0 提供。应用标识和 userData 目录不变。0.5.x 可由原更新器升级；0.4.0 可直接手动覆盖安装 0.6.0。
 
 首次启动发现旧 schema v2/v3 时，先在 `userData/data/upgrade-backups/` 生成包含数据库、排班源、成员源和模板的升级备份，验证完整性和文件哈希后才迁移到 v4。失败停止启动，升级备份不参与每日备份轮换。
 
