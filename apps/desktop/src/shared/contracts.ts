@@ -199,6 +199,7 @@ export type ReportFileKey =
   | "wageAssessment";
 
 export interface ReportDraft {
+  revision?: number;
   year: number;
   month: number;
   fillDate: string;
@@ -236,6 +237,8 @@ export interface ReportFilePreview {
 }
 
 export interface ReportPreview {
+  draftRevision?: number;
+  dataRevision?: number;
   files: ReportFilePreview[];
   snapshot: DashboardSnapshot;
   warnings: string[];
@@ -279,7 +282,15 @@ export interface UpdateSettings {
 
 export interface UpdateState {
   supported: boolean;
-  status: "unsupported" | "idle" | "checking" | "available" | "downloading" | "downloaded" | "upToDate" | "error";
+  status:
+    | "unsupported"
+    | "idle"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "downloaded"
+    | "upToDate"
+    | "error";
   currentVersion: string;
   availableVersion: string | null;
   progressPercent: number | null;
@@ -345,6 +356,7 @@ export interface ManualAttendanceInput {
 }
 
 export interface RecordFilters {
+  shiftId?: string;
   startDate?: string;
   endDate?: string;
   memberId?: string;
@@ -353,28 +365,89 @@ export interface RecordFilters {
 }
 
 export interface CheckinApi {
+  planOvertime(
+    input: OvertimeInput & { operationId: string },
+  ): Promise<OperationResult>;
+  listOccurrences(filters: {
+    startDate: string;
+    endDate: string;
+    includeCancelled?: boolean;
+  }): Promise<OccurrenceView[]>;
+  saveOccurrence(input: OccurrenceInput): Promise<OperationResult>;
+  cancelOccurrence(input: {
+    id: string;
+    expectedRevision: number;
+    operationId: string;
+  }): Promise<OperationResult>;
+  attendanceAction(input: AttendanceAction): Promise<OperationResult>;
+  listOperations(): Promise<OperationEntry[]>;
+  undoOperation(id: string): Promise<OperationResult>;
+  getDataRevision(): Promise<number>;
+  chooseImportPreview(input: {
+    kind: "schedule" | "members";
+    month: string;
+    effectiveDate: string;
+  }): Promise<ImportPreview | null>;
+  applyImportPreview(input: {
+    id: string;
+    resolutions: Record<string, "keep" | "replace">;
+  }): Promise<{ message: string }>;
+  onCloseRequested(listener: () => Promise<boolean>): () => void;
   bootstrap(now?: string): Promise<BootstrapData>;
-  getCurrentShifts(now?: string): Promise<{ current: ShiftView[]; next: ShiftView[] }>;
+  getCurrentShifts(
+    now?: string,
+  ): Promise<{ current: ShiftView[]; next: ShiftView[] }>;
   getShiftsForDate(date: string): Promise<ShiftView[]>;
-  checkIn(shiftId: string, selections: CheckInSelection[], now?: string): Promise<CheckInResult[]>;
+  checkIn(
+    shiftId: string,
+    selections: CheckInSelection[],
+    now?: string,
+  ): Promise<CheckInResult[]>;
   listRecords(filters: RecordFilters): Promise<AttendanceRecordView[]>;
-  correctRecord(recordId: string, memberId: string): Promise<AttendanceRecordView>;
+  correctRecord(
+    recordId: string,
+    memberId: string,
+  ): Promise<AttendanceRecordView>;
   revokeRecord(recordId: string): Promise<void>;
   restoreRecord(recordId: string): Promise<AttendanceRecordView>;
-  addManualAttendance(input: ManualAttendanceInput): Promise<AttendanceRecordView>;
+  addManualAttendance(
+    input: ManualAttendanceInput,
+  ): Promise<AttendanceRecordView>;
   getDashboard(filters: DashboardFilters): Promise<DashboardSnapshot>;
-  listLeaves(filters: { startDate: string; endDate: string; includeCancelled?: boolean }): Promise<LeaveRecordView[]>;
+  listLeaves(filters: {
+    startDate: string;
+    endDate: string;
+    includeCancelled?: boolean;
+  }): Promise<LeaveRecordView[]>;
   createLeave(input: LeaveInput): Promise<LeaveRecordView>;
-  updateLeave(leaveId: string, input: Omit<LeaveInput, "slotId">): Promise<LeaveRecordView>;
+  updateLeave(
+    leaveId: string,
+    input: Omit<LeaveInput, "slotId">,
+  ): Promise<LeaveRecordView>;
   cancelLeave(leaveId: string): Promise<void>;
-  addShiftStaff(input: { shiftId: string; memberId: string }): Promise<ShiftView>;
+  addShiftStaff(input: {
+    shiftId: string;
+    memberId: string;
+  }): Promise<ShiftView>;
   removeShiftStaff(slotId: string): Promise<void>;
-  listOvertime(filters: { startDate: string; endDate: string; includeCancelled?: boolean }): Promise<OvertimeEntryView[]>;
+  listOvertime(filters: {
+    startDate: string;
+    endDate: string;
+    includeCancelled?: boolean;
+  }): Promise<OvertimeEntryView[]>;
   createOvertime(input: OvertimeInput): Promise<OvertimeEntryView>;
   cancelOvertime(slotId: string): Promise<void>;
-  chooseAndImportSchedule(input: { month: string; effectiveDate: string }): Promise<ScheduleImportResult | null>;
+  chooseAndImportSchedule(input: {
+    month: string;
+    effectiveDate: string;
+  }): Promise<ScheduleImportResult | null>;
   saveImportTemplate(kind: "schedule" | "members"): Promise<string | null>;
-  chooseAndImportMembers(): Promise<{ imported: number; created: number; updated: number; fileName: string } | null>;
+  chooseAndImportMembers(): Promise<{
+    imported: number;
+    created: number;
+    updated: number;
+    fileName: string;
+  } | null>;
   listMembers(): Promise<Member[]>;
   saveMember(member: Partial<Member> & { name: string }): Promise<Member>;
   getSettings(): Promise<Settings>;
@@ -389,16 +462,103 @@ export interface CheckinApi {
   getStartupSettings(): Promise<StartupSettings>;
   setStartupEnabled(enabled: boolean): Promise<StartupSettings>;
   getStorageOverview(): Promise<StorageOverview>;
-  chooseAndSetStorageDirectory(kind: "output" | "backup"): Promise<StorageOverview | null>;
+  chooseAndSetStorageDirectory(
+    kind: "output" | "backup",
+  ): Promise<StorageOverview | null>;
   getReportDraft(year: number, month: number): Promise<ReportDraft>;
   saveReportDraft(draft: ReportDraft): Promise<ReportDraft>;
   previewReports(draft: ReportDraft): Promise<ReportPreview>;
   chooseOutputDirectory(): Promise<string | null>;
-  exportReports(draft: ReportDraft): Promise<ExportResult>;
+  exportReports(
+    draft: ReportDraft,
+    dataRevision?: number,
+    operationId?: string,
+  ): Promise<ExportResult>;
   openPath(path: string): Promise<string>;
   openDataDirectory(): Promise<string>;
   createBackup(): Promise<string>;
   listBackups(): Promise<BackupEntry[]>;
   restoreBackup(path: string): Promise<boolean>;
   chooseAndRestoreBackup(): Promise<boolean>;
+}
+
+export interface OccurrenceView extends ShiftView {
+  recoveryOperationId: string | null;
+  removedSlots: Array<{ id: string; memberName: string }>;
+  revision: number;
+  active: boolean;
+  editable: boolean;
+  hasAttendanceHistory: boolean;
+  origin: "imported" | "manual";
+  original: { date: string; startTime: string; endTime: string } | null;
+}
+export interface OccurrenceInput {
+  id?: string;
+  operationId: string;
+  expectedRevision?: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+  kind: ShiftKind;
+  workType: WorkType;
+  label: string;
+  note: string;
+  memberIds: string[];
+  confirmImpact?: boolean;
+}
+export type AttendanceAction = {
+  operationId: string;
+  shiftId: string;
+  expectedRevision?: number;
+} & (
+  | { type: "checkin"; selections: CheckInSelection[] }
+  | {
+      type: "manual";
+      slotId: string;
+      memberId: string;
+      historicalPunchTime?: string | null;
+    }
+  | {
+      type: "createLeave";
+      slotId: string;
+      replacementMemberId?: string | null;
+      reason?: string;
+    }
+  | {
+      type: "updateLeave";
+      leaveId: string;
+      replacementMemberId?: string | null;
+      reason?: string;
+    }
+  | { type: "cancelLeave" | "restoreLeave"; leaveId: string }
+  | { type: "cancelOvertime" | "restoreOvertime"; slotId: string }
+  | { type: "addStaff"; memberId: string }
+  | { type: "removeStaff" | "restoreStaff"; slotId: string }
+  | { type: "revokeAndRemove"; slotId: string; recordId: string }
+  | { type: "correct"; recordId: string; memberId: string }
+  | { type: "revoke" | "restore"; recordId: string }
+);
+export interface OperationEntry {
+  id: string;
+  label: string;
+  createdAt: string;
+  undoneAt: string | null;
+  canUndo: boolean;
+}
+export interface OperationResult {
+  occurrences?: OccurrenceView[];
+  operation: OperationEntry;
+  affectedDates: string[];
+  dataRevision: number;
+  newRecordIds: string[];
+}
+export interface ImportPreview {
+  id: string;
+  kind: "schedule" | "members";
+  fileName: string;
+  dataRevision: number;
+  additions: string[];
+  updates: string[];
+  warnings: string[];
+  conflicts: Array<{ id: string; description: string; canReplace: boolean }>;
 }

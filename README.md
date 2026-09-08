@@ -4,9 +4,11 @@
 
 ```
 平台     Windows 10/11 x64（NSIS 安装包）        运行时    Electron + React + TypeScript
-本地存储  SQLite                             版本      0.5.1
+本地存储  SQLite                             版本      0.6.0 发布候选
 协议     MIT 开源
 ```
+
+0.6.0 候选已完成前端、日历、导入与数据升级保护，包含陶土主题及暨南大学校徽。安装包和更新校验文件位于 `apps/desktop/release/candidate-0.6.0/`，尚未推送稳定更新。测试证据、截图及仍待安装环境验收的项目见 [升级验证报告](docs/v0.6.0-upgrade-validation.md)。
 
 ---
 

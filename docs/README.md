@@ -1,5 +1,8 @@
 # 文档索引
 
+- [v0.6.0 升级验证报告](v0.6.0-upgrade-validation.md)：候选交付、兼容性证据、截图和稳定发布条件
+- [v0.6.0 交互与数据边界](decisions/ADR-003-v060-ui-reliability.md)：单次计划、考勤恢复、草稿及导入版本契约
+
 - [功能手册与操作指南 PDF](../output/pdf/网络服务小组功能手册与操作指南_0.3.0.pdf)：面向老师和同学，含界面截图与操作步骤
 - `requirements.md`：范围、业务规则和验收映射
 - `ARCHITECTURE.md`：模块、数据模型、接口和安全边界

@@ -10,7 +10,13 @@ import type {
   ShiftView,
   WorkType,
 } from "../../shared/contracts";
-import { dateFromOptionalIso, formatLocalDate, formatLocalTime, isWithinShift, lateStatusFor } from "../../domain/time";
+import {
+  dateFromOptionalIso,
+  formatLocalDate,
+  formatLocalTime,
+  isWithinShift,
+  lateStatusFor,
+} from "../../domain/time";
 import type { DatabaseStore } from "../database";
 import type { MemberService } from "./member-service";
 
@@ -117,49 +123,89 @@ export class AttendanceService {
     private readonly members: MemberService,
   ) {}
 
-  getCurrentAndNext(nowIso?: string): { current: ShiftView[]; next: ShiftView[] } {
+  getCurrentAndNext(nowIso?: string): {
+    current: ShiftView[];
+    next: ShiftView[];
+  } {
     const now = dateFromOptionalIso(nowIso);
     const date = formatLocalDate(now);
     const time = formatLocalTime(now);
     const today = this.getShiftsForDate(date);
-    const current = today.filter((shift) => isWithinShift(time, shift.startTime, shift.endTime));
-    const nextToday = today.filter((shift) => shift.startTime > time).slice(0, 3);
+    const current = today.filter((shift) =>
+      isWithinShift(time, shift.startTime, shift.endTime),
+    );
+    const nextToday = today
+      .filter((shift) => shift.startTime > time)
+      .slice(0, 3);
     if (nextToday.length > 0) return { current, next: nextToday };
     const futureRows = this.store
-      .prepare("SELECT DISTINCT date FROM shifts WHERE active = 1 AND date > ? ORDER BY date LIMIT 1")
+      .prepare(
+        "SELECT DISTINCT date FROM shifts WHERE active = 1 AND date > ? ORDER BY date LIMIT 1",
+      )
       .get(date) as { date: string } | undefined;
-    return { current, next: futureRows ? this.getShiftsForDate(futureRows.date).slice(0, 3) : [] };
+    return {
+      current,
+      next: futureRows
+        ? this.getShiftsForDate(futureRows.date).slice(0, 3)
+        : [],
+    };
   }
 
   getShiftsForDate(date: string): ShiftView[] {
     const rows = this.store
-      .prepare("SELECT * FROM shifts WHERE date = ? AND active = 1 ORDER BY start_time, kind")
+      .prepare(
+        "SELECT * FROM shifts WHERE date = ? AND active = 1 ORDER BY start_time, kind",
+      )
       .all(date) as unknown as ShiftRow[];
     return rows.map((row) => this.mapShift(row));
   }
 
   getShift(id: string): ShiftView | null {
-    const row = this.store.prepare("SELECT * FROM shifts WHERE id = ? AND active = 1").get(id) as ShiftRow | undefined;
+    const row = this.store
+      .prepare("SELECT * FROM shifts WHERE id = ? AND active = 1")
+      .get(id) as ShiftRow | undefined;
     return row ? this.mapShift(row) : null;
   }
 
-  checkIn(shiftId: string, selections: CheckInSelection[], nowIso?: string): CheckInResult[] {
+  getShiftIncludingInactive(id: string): ShiftView | null {
+    const row = this.store
+      .prepare("SELECT * FROM shifts WHERE id = ?")
+      .get(id) as ShiftRow | undefined;
+    return row ? this.mapShift(row) : null;
+  }
+
+  checkIn(
+    shiftId: string,
+    selections: CheckInSelection[],
+    nowIso?: string,
+  ): CheckInResult[] {
     if (selections.length === 0) throw new Error("请至少选择一名实际到场人员");
     const shift = this.getShift(shiftId);
     if (!shift) throw new Error("班次不存在或已失效");
     const now = dateFromOptionalIso(nowIso);
-    if (formatLocalDate(now) !== shift.date || !isWithinShift(formatLocalTime(now), shift.startTime, shift.endTime)) {
+    if (
+      formatLocalDate(now) !== shift.date ||
+      !isWithinShift(formatLocalTime(now), shift.startTime, shift.endTime)
+    ) {
       throw new Error("当前不在该班次的签到时间内");
     }
     const memberIds = selections.map((selection) => selection.memberId);
-    if (new Set(memberIds).size !== memberIds.length) throw new Error("同一人在同一班不能占用多个席位");
+    if (new Set(memberIds).size !== memberIds.length)
+      throw new Error("同一人在同一班不能占用多个席位");
     const slotIds = new Set(shift.slots.map((slot) => slot.id));
     for (const selection of selections) {
-      if (!slotIds.has(selection.slotId)) throw new Error("签到席位不属于当前班次");
+      if (!slotIds.has(selection.slotId))
+        throw new Error("签到席位不属于当前班次");
       const slot = shift.slots.find((item) => item.id === selection.slotId)!;
-      if (slot.leave && !slot.leave.replacementMemberId) throw new Error("该席位已请假且没有代班人");
-      if (slot.leave?.replacementMemberId && selection.memberId !== slot.leave.replacementMemberId) throw new Error("该席位只能由已安排的代班人签到");
-      if (!this.members.get(selection.memberId)?.active) throw new Error("所选成员不存在或已停用");
+      if (slot.leave && !slot.leave.replacementMemberId)
+        throw new Error("该席位已请假且没有代班人");
+      if (
+        slot.leave?.replacementMemberId &&
+        selection.memberId !== slot.leave.replacementMemberId
+      )
+        throw new Error("该席位只能由已安排的代班人签到");
+      if (!this.members.get(selection.memberId)?.active)
+        throw new Error("所选成员不存在或已停用");
     }
 
     const punchTime = now.toISOString();
@@ -167,14 +213,21 @@ export class AttendanceService {
     return this.store.transaction(() =>
       selections.map((selection) => {
         const bySlot = this.store
-          .prepare("SELECT id, actual_member_id FROM attendance_records WHERE shift_slot_id = ? AND status = 'active'")
-          .get(selection.slotId) as { id: string; actual_member_id: string } | undefined;
+          .prepare(
+            "SELECT id, actual_member_id FROM attendance_records WHERE shift_slot_id = ? AND status = 'active'",
+          )
+          .get(selection.slotId) as
+          | { id: string; actual_member_id: string }
+          | undefined;
         if (bySlot) {
-          if (bySlot.actual_member_id !== selection.memberId) throw new Error("该席位已经由其他成员签到");
+          if (bySlot.actual_member_id !== selection.memberId)
+            throw new Error("该席位已经由其他成员签到");
           return { record: this.getRecord(bySlot.id), alreadyExisted: true };
         }
         const duplicateMember = this.store
-          .prepare("SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active'")
+          .prepare(
+            "SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active'",
+          )
           .get(shiftId, selection.memberId) as { id: string } | undefined;
         if (duplicateMember) throw new Error("同一成员已经在本班其他席位签到");
 
@@ -187,12 +240,14 @@ export class AttendanceService {
           "realtime",
         );
         this.store
-          .prepare(`
+          .prepare(
+            `
             INSERT INTO attendance_records(
               id, shift_id, shift_slot_id, actual_member_id, punch_time, entered_at, paid_minutes,
               late_status, source, status, attendance_mode, late_threshold_minutes, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'realtime', 'active', ?, ?, ?, ?)
-          `)
+          `,
+          )
           .run(
             id,
             shiftId,
@@ -215,6 +270,10 @@ export class AttendanceService {
   listRecords(filters: RecordFilters = {}): AttendanceRecordView[] {
     const conditions: string[] = [];
     const parameters: Array<string | number> = [];
+    if (filters.shiftId) {
+      conditions.push("s.id = ?");
+      parameters.push(filters.shiftId);
+    }
     if (!filters.includeRevoked) conditions.push("ar.status = 'active'");
     if (filters.startDate) {
       conditions.push("s.date >= ?");
@@ -236,13 +295,17 @@ export class AttendanceService {
     }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = this.store
-      .prepare(`${RECORD_SELECT} ${where} ORDER BY s.date DESC, s.start_time DESC, ar.entered_at DESC`)
+      .prepare(
+        `${RECORD_SELECT} ${where} ORDER BY s.date DESC, s.start_time DESC, ar.entered_at DESC`,
+      )
       .all(...parameters) as unknown as RecordRow[];
     return rows.map(mapRecord);
   }
 
   getRecord(id: string): AttendanceRecordView {
-    const row = this.store.prepare(`${RECORD_SELECT} WHERE ar.id = ?`).get(id) as RecordRow | undefined;
+    const row = this.store
+      .prepare(`${RECORD_SELECT} WHERE ar.id = ?`)
+      .get(id) as RecordRow | undefined;
     if (!row) throw new Error("签到记录不存在");
     return mapRecord(row);
   }
@@ -250,19 +313,38 @@ export class AttendanceService {
   correctMember(recordId: string, memberId: string): AttendanceRecordView {
     const record = this.getRecord(recordId);
     if (record.status !== "active") throw new Error("只能更正有效签到记录");
-    if (!this.members.get(memberId)?.active) throw new Error("目标成员不存在或已停用");
-    const leave = this.store.prepare("SELECT replacement_member_id FROM leave_records WHERE shift_slot_id = ? AND status = 'active'")
-      .get(record.slotId) as { replacement_member_id: string | null } | undefined;
-    if (leave && memberId !== leave.replacement_member_id) throw new Error("请假席位只能登记已安排的代班人");
+    if (!this.members.get(memberId)?.active)
+      throw new Error("目标成员不存在或已停用");
+    const leave = this.store
+      .prepare(
+        "SELECT replacement_member_id FROM leave_records WHERE shift_slot_id = ? AND status = 'active'",
+      )
+      .get(record.slotId) as
+      | { replacement_member_id: string | null }
+      | undefined;
+    if (leave && memberId !== leave.replacement_member_id)
+      throw new Error("请假席位只能登记已安排的代班人");
     if (record.actualMemberId === memberId) return record;
     const duplicate = this.store
-      .prepare("SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active' AND id <> ?")
+      .prepare(
+        "SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active' AND id <> ?",
+      )
       .get(record.shiftId, memberId, recordId) as { id: string } | undefined;
     if (duplicate) throw new Error("目标成员已经在该班次签到");
     const changedAt = new Date().toISOString();
     this.store.transaction(() => {
-      this.store.prepare("UPDATE attendance_records SET actual_member_id = ?, updated_at = ? WHERE id = ?").run(memberId, changedAt, recordId);
-      this.logChange(recordId, "correct_member", { actualMemberId: record.actualMemberId }, { actualMemberId: memberId }, changedAt);
+      this.store
+        .prepare(
+          "UPDATE attendance_records SET actual_member_id = ?, updated_at = ? WHERE id = ?",
+        )
+        .run(memberId, changedAt, recordId);
+      this.logChange(
+        recordId,
+        "correct_member",
+        { actualMemberId: record.actualMemberId },
+        { actualMemberId: memberId },
+        changedAt,
+      );
     });
     return this.getRecord(recordId);
   }
@@ -272,41 +354,80 @@ export class AttendanceService {
     if (record.status === "revoked") return;
     const changedAt = new Date().toISOString();
     this.store.transaction(() => {
-      this.store.prepare("UPDATE attendance_records SET status = 'revoked', updated_at = ? WHERE id = ?").run(changedAt, recordId);
-      this.logChange(recordId, "revoke", { status: "active" }, { status: "revoked" }, changedAt);
+      this.store
+        .prepare(
+          "UPDATE attendance_records SET status = 'revoked', updated_at = ? WHERE id = ?",
+        )
+        .run(changedAt, recordId);
+      this.logChange(
+        recordId,
+        "revoke",
+        { status: "active" },
+        { status: "revoked" },
+        changedAt,
+      );
     });
   }
 
   restore(recordId: string): AttendanceRecordView {
     const record = this.getRecord(recordId);
     if (record.status === "active") return record;
-    const leave = this.store.prepare("SELECT replacement_member_id FROM leave_records WHERE shift_slot_id = ? AND status = 'active'")
-      .get(record.slotId) as { replacement_member_id: string | null } | undefined;
-    if (leave && record.actualMemberId !== leave.replacement_member_id) throw new Error("当前请假安排与该签到人员不一致，不能恢复");
+    const target = this.store
+      .prepare(
+        "SELECT ss.id FROM shift_slots ss JOIN shifts s ON s.id=ss.shift_id WHERE ss.id=? AND ss.is_vacant=0 AND s.active=1",
+      )
+      .get(record.slotId);
+    if (!target) throw new Error("班次或席位已移除，请先恢复安排");
+    const leave = this.store
+      .prepare(
+        "SELECT replacement_member_id FROM leave_records WHERE shift_slot_id = ? AND status = 'active'",
+      )
+      .get(record.slotId) as
+      | { replacement_member_id: string | null }
+      | undefined;
+    if (leave && record.actualMemberId !== leave.replacement_member_id)
+      throw new Error("当前请假安排与该签到人员不一致，不能恢复");
     const slotConflict = this.store
-      .prepare("SELECT id FROM attendance_records WHERE shift_slot_id = ? AND status = 'active'")
+      .prepare(
+        "SELECT id FROM attendance_records WHERE shift_slot_id = ? AND status = 'active'",
+      )
       .get(record.slotId) as { id: string } | undefined;
     const memberConflict = this.store
-      .prepare("SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active'")
+      .prepare(
+        "SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active'",
+      )
       .get(record.shiftId, record.actualMemberId) as { id: string } | undefined;
-    if (slotConflict || memberConflict) throw new Error("该席位或成员已有有效签到，不能恢复");
+    if (slotConflict || memberConflict)
+      throw new Error("该席位或成员已有有效签到，不能恢复");
     const changedAt = new Date().toISOString();
     this.store.transaction(() => {
-      this.store.prepare("UPDATE attendance_records SET status = 'active', updated_at = ? WHERE id = ?").run(changedAt, recordId);
-      this.logChange(recordId, "restore", { status: "revoked" }, { status: "active" }, changedAt);
+      this.store
+        .prepare(
+          "UPDATE attendance_records SET status = 'active', updated_at = ? WHERE id = ?",
+        )
+        .run(changedAt, recordId);
+      this.logChange(
+        recordId,
+        "restore",
+        { status: "revoked" },
+        { status: "active" },
+        changedAt,
+      );
     });
     return this.getRecord(recordId);
   }
 
   addManual(input: ManualAttendanceInput): AttendanceRecordView {
     const slot = this.store
-      .prepare(`
+      .prepare(
+        `
         SELECT ss.id, ss.shift_id, s.date, s.start_time, s.paid_minutes, s.attendance_mode, s.late_threshold_minutes,
                lr.id AS leave_id, lr.replacement_member_id
         FROM shift_slots ss JOIN shifts s ON s.id = ss.shift_id
         LEFT JOIN leave_records lr ON lr.shift_slot_id = ss.id AND lr.status = 'active'
         WHERE ss.id = ? AND s.active = 1 AND ss.is_vacant = 0
-      `)
+      `,
+      )
       .get(input.slotId) as
       | {
           id: string;
@@ -321,10 +442,18 @@ export class AttendanceService {
         }
       | undefined;
     if (!slot) throw new Error("补记席位不存在或已失效");
-    if (slot.leave_id && !slot.replacement_member_id) throw new Error("该席位已请假且没有代班人");
-    if (slot.replacement_member_id && input.memberId !== slot.replacement_member_id) throw new Error("该席位只能由已安排的代班人补记");
-    if (!this.members.get(input.memberId)?.active) throw new Error("所选成员不存在或已停用");
-    const punchDate = input.historicalPunchTime ? dateFromOptionalIso(input.historicalPunchTime) : null;
+    if (slot.leave_id && !slot.replacement_member_id)
+      throw new Error("该席位已请假且没有代班人");
+    if (
+      slot.replacement_member_id &&
+      input.memberId !== slot.replacement_member_id
+    )
+      throw new Error("该席位只能由已安排的代班人补记");
+    if (!this.members.get(input.memberId)?.active)
+      throw new Error("所选成员不存在或已停用");
+    const punchDate = input.historicalPunchTime
+      ? dateFromOptionalIso(input.historicalPunchTime)
+      : null;
     const punchTime = punchDate?.toISOString() ?? null;
     const enteredAt = new Date().toISOString();
     const lateStatus = lateStatusFor(
@@ -337,20 +466,26 @@ export class AttendanceService {
     const id = randomUUID();
     this.store.transaction(() => {
       const occupied = this.store
-        .prepare("SELECT id FROM attendance_records WHERE shift_slot_id = ? AND status = 'active'")
+        .prepare(
+          "SELECT id FROM attendance_records WHERE shift_slot_id = ? AND status = 'active'",
+        )
         .get(input.slotId) as { id: string } | undefined;
       if (occupied) throw new Error("该席位已有有效签到");
       const duplicate = this.store
-        .prepare("SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active'")
+        .prepare(
+          "SELECT id FROM attendance_records WHERE shift_id = ? AND actual_member_id = ? AND status = 'active'",
+        )
         .get(slot.shift_id, input.memberId) as { id: string } | undefined;
       if (duplicate) throw new Error("同一成员已经在该班次签到");
       this.store
-        .prepare(`
+        .prepare(
+          `
           INSERT INTO attendance_records(
             id, shift_id, shift_slot_id, actual_member_id, punch_time, entered_at, paid_minutes,
             late_status, source, status, attendance_mode, late_threshold_minutes, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'active', ?, ?, ?, ?)
-        `)
+        `,
+        )
         .run(
           id,
           slot.shift_id,
@@ -371,7 +506,8 @@ export class AttendanceService {
 
   private mapShift(row: ShiftRow): ShiftView {
     const slots = this.store
-      .prepare(`
+      .prepare(
+        `
         SELECT ss.id, ss.position, ss.scheduled_member_id, scheduled.name AS scheduled_member_name,
                ss.slot_role, ss.slot_source, ss.slot_note,
                ar.id AS attendance_id, ar.actual_member_id, actual.name AS actual_member_name,
@@ -388,7 +524,8 @@ export class AttendanceService {
         LEFT JOIN members leave_member ON leave_member.id = lr.member_id
         LEFT JOIN members replacement ON replacement.id = lr.replacement_member_id
         WHERE ss.shift_id = ? AND ss.is_vacant = 0 ORDER BY ss.position
-      `)
+      `,
+      )
       .all(row.id) as unknown as SlotRow[];
     return {
       id: row.id,
@@ -415,17 +552,19 @@ export class AttendanceService {
         role: slot.slot_role,
         source: slot.slot_source,
         note: slot.slot_note,
-        leave: slot.leave_id ? {
-          id: slot.leave_id,
-          memberId: slot.leave_member_id!,
-          memberName: slot.leave_member_name!,
-          replacementMemberId: slot.replacement_member_id,
-          replacementMemberName: slot.replacement_member_name,
-          reason: slot.leave_reason ?? "",
-          status: slot.leave_status!,
-          createdAt: slot.leave_created_at!,
-          updatedAt: slot.leave_updated_at!,
-        } : null,
+        leave: slot.leave_id
+          ? {
+              id: slot.leave_id,
+              memberId: slot.leave_member_id!,
+              memberName: slot.leave_member_name!,
+              replacementMemberId: slot.replacement_member_id,
+              replacementMemberName: slot.replacement_member_name,
+              reason: slot.leave_reason ?? "",
+              status: slot.leave_status!,
+              createdAt: slot.leave_created_at!,
+              updatedAt: slot.leave_updated_at!,
+            }
+          : null,
       })),
     };
   }
@@ -438,10 +577,19 @@ export class AttendanceService {
     changedAt: string,
   ): void {
     this.store
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO attendance_changes(id, attendance_id, change_type, before_json, after_json, source, changed_at)
         VALUES (?, ?, ?, ?, ?, 'local_ui', ?)
-      `)
-      .run(randomUUID(), attendanceId, type, JSON.stringify(before), JSON.stringify(after), changedAt);
+      `,
+      )
+      .run(
+        randomUUID(),
+        attendanceId,
+        type,
+        JSON.stringify(before),
+        JSON.stringify(after),
+        changedAt,
+      );
   }
 }

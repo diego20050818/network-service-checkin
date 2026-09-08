@@ -33,7 +33,9 @@ const HEADER_MAP: Record<string, keyof Omit<Member, "id" | "active">> = {
 };
 
 function normalize(value: unknown): string {
-  return String(value ?? "").replace(/\s+/g, "").trim();
+  return String(value ?? "")
+    .replace(/\s+/g, "")
+    .trim();
 }
 
 function toMember(row: MemberRow): Member {
@@ -59,25 +61,35 @@ export class MemberService {
 
   list(activeOnly = true): Member[] {
     const rows = this.store
-      .prepare(`SELECT * FROM members ${activeOnly ? "WHERE active = 1" : ""} ORDER BY name COLLATE NOCASE`)
+      .prepare(
+        `SELECT * FROM members ${activeOnly ? "WHERE active = 1" : ""} ORDER BY name COLLATE NOCASE`,
+      )
       .all() as unknown as MemberRow[];
     return rows.map(toMember);
   }
 
   get(id: string): Member | null {
-    const row = this.store.prepare("SELECT * FROM members WHERE id = ?").get(id) as MemberRow | undefined;
+    const row = this.store
+      .prepare("SELECT * FROM members WHERE id = ?")
+      .get(id) as MemberRow | undefined;
     return row ? toMember(row) : null;
   }
 
   findByExactName(name: string): Member[] {
-    const rows = this.store.prepare("SELECT * FROM members WHERE name = ? AND active = 1 ORDER BY id").all(name) as unknown as MemberRow[];
+    const rows = this.store
+      .prepare(
+        "SELECT * FROM members WHERE name = ? AND active = 1 ORDER BY id",
+      )
+      .all(name) as unknown as MemberRow[];
     return rows.map(toMember);
   }
 
   ensureMinimal(name: string): { member: Member; created: boolean } {
     const matches = this.findByExactName(name);
-    if (matches.length === 1 && matches[0]) return { member: matches[0], created: false };
-    if (matches.length > 1) throw new Error(`存在多个同名成员“${name}”，请先在成员资料中明确选择`);
+    if (matches.length === 1 && matches[0])
+      return { member: matches[0], created: false };
+    if (matches.length > 1)
+      throw new Error(`存在多个同名成员“${name}”，请先在成员资料中明确选择`);
     return { member: this.save({ name }), created: true };
   }
 
@@ -99,7 +111,8 @@ export class MemberService {
     if (!values.name) throw new Error("成员姓名不能为空");
 
     this.store
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO members (
           id, name, college, role, phone, student_id, major, grade, employee_no, active, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -114,7 +127,8 @@ export class MemberService {
           employee_no = excluded.employee_no,
           active = excluded.active,
           updated_at = excluded.updated_at
-      `)
+      `,
+      )
       .run(
         id,
         values.name,
@@ -126,7 +140,13 @@ export class MemberService {
         values.grade,
         values.employeeNo,
         values.active ? 1 : 0,
-        existing ? (this.store.prepare("SELECT created_at FROM members WHERE id = ?").get(id) as { created_at: string }).created_at : now,
+        existing
+          ? (
+              this.store
+                .prepare("SELECT created_at FROM members WHERE id = ?")
+                .get(id) as { created_at: string }
+            ).created_at
+          : now,
         now,
       );
     const saved = this.get(id);
@@ -134,7 +154,9 @@ export class MemberService {
     return saved;
   }
 
-  async importWorkbook(filePath: string): Promise<{ imported: number; created: number; updated: number; fileName: string }> {
+  async parseWorkbook(
+    filePath: string,
+  ): Promise<Array<Partial<Member> & { name: string }>> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
     const worksheet = workbook.worksheets[0];
@@ -154,7 +176,11 @@ export class MemberService {
     if (!headerRow) throw new Error("未找到包含“姓名”的成员表头");
 
     const inputs: Array<Partial<Member> & { name: string }> = [];
-    for (let rowNumber = headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    for (
+      let rowNumber = headerRow + 1;
+      rowNumber <= worksheet.rowCount;
+      rowNumber += 1
+    ) {
       const row = worksheet.getRow(rowNumber);
       const input: Partial<Member> = {};
       for (const [column, key] of columns) {
@@ -164,22 +190,47 @@ export class MemberService {
     }
     if (inputs.length === 0) throw new Error("成员表中没有可导入人员");
 
+    return inputs;
+  }
+
+  async importWorkbook(
+    filePath: string,
+    expectedRevision?: number,
+    expectedHash?: string,
+  ): Promise<{
+    imported: number;
+    created: number;
+    updated: number;
+    fileName: string;
+  }> {
+    const inputs = await this.parseWorkbook(filePath);
     const sourceFile = await readFile(filePath);
     const sourceSha256 = createHash("sha256").update(sourceFile).digest("hex");
     const importedAt = new Date().toISOString();
     let storedPath = filePath;
     if (this.memberSourceDirectory) {
       await mkdir(this.memberSourceDirectory, { recursive: true });
-      storedPath = join(this.memberSourceDirectory, `${importedAt.replace(/[:.]/g, "-")}_${basename(filePath)}`);
+      storedPath = join(
+        this.memberSourceDirectory,
+        `${importedAt.replace(/[:.]/g, "-")}_${basename(filePath)}`,
+      );
       await copyFile(filePath, storedPath);
     }
 
+    if (expectedHash && sourceSha256 !== expectedHash)
+      throw new Error("源文件已变化，请重新预览");
+    if (
+      expectedRevision !== undefined &&
+      this.store.dataRevision() !== expectedRevision
+    )
+      throw new Error("数据已变化，请重新预览");
     let created = 0;
     let updated = 0;
     this.store.transaction(() => {
       for (const input of inputs) {
         const matches = this.findByExactName(input.name);
-        if (matches.length > 1) throw new Error(`同名成员“${input.name}”无法自动合并`);
+        if (matches.length > 1)
+          throw new Error(`同名成员“${input.name}”无法自动合并`);
         if (matches[0]) {
           this.save({ ...matches[0], ...input, id: matches[0].id });
           updated += 1;
@@ -189,7 +240,8 @@ export class MemberService {
         }
       }
       this.store
-        .prepare(`
+        .prepare(
+          `
           INSERT INTO member_imports(id, source_name, source_path, source_sha256, imported_at, row_count)
           VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(source_sha256) DO UPDATE SET
@@ -197,9 +249,22 @@ export class MemberService {
             source_path = excluded.source_path,
             imported_at = excluded.imported_at,
             row_count = excluded.row_count
-        `)
-        .run(randomUUID(), basename(filePath), storedPath, sourceSha256, importedAt, inputs.length);
+        `,
+        )
+        .run(
+          randomUUID(),
+          basename(filePath),
+          storedPath,
+          sourceSha256,
+          importedAt,
+          inputs.length,
+        );
     });
-    return { imported: inputs.length, created, updated, fileName: basename(filePath) };
+    return {
+      imported: inputs.length,
+      created,
+      updated,
+      fileName: basename(filePath),
+    };
   }
 }

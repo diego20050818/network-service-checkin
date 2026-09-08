@@ -1,8 +1,14 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const MIGRATION_1 = `
 CREATE TABLE IF NOT EXISTS members (
@@ -147,7 +153,7 @@ CREATE TABLE IF NOT EXISTS member_imports (
 );
 `;
 
-const MIGRATION_3 = `
+export const MIGRATION_3 = `
 ALTER TABLE schedule_imports
   ADD COLUMN source_type TEXT NOT NULL DEFAULT 'file' CHECK (source_type IN ('file', 'system'));
 
@@ -179,16 +185,56 @@ CREATE INDEX IF NOT EXISTS ix_leave_member_status
   ON leave_records(member_id, status);
 `;
 
+export const MIGRATION_4 = `
+ALTER TABLE shifts ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE shifts ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE report_drafts ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE data_version (id INTEGER PRIMARY KEY CHECK(id = 1), revision INTEGER NOT NULL);
+INSERT INTO data_version VALUES(1, 0);
+CREATE TABLE shift_sources (
+  shift_id TEXT PRIMARY KEY REFERENCES shifts(id),
+  import_id TEXT NOT NULL REFERENCES schedule_imports(id),
+  source_active INTEGER NOT NULL DEFAULT 1,
+  payload_json TEXT NOT NULL
+);
+CREATE TABLE operation_history (
+  id TEXT PRIMARY KEY, label TEXT NOT NULL, request_json TEXT NOT NULL,
+  shift_ids_json TEXT NOT NULL, before_json TEXT NOT NULL, after_json TEXT NOT NULL,
+  result_json TEXT NOT NULL, created_at TEXT NOT NULL, undone_at TEXT
+);
+CREATE INDEX ix_operations_created ON operation_history(created_at);
+CREATE TABLE formal_schedule_versions (import_id TEXT PRIMARY KEY REFERENCES schedule_imports(id), payload_json TEXT NOT NULL);
+CREATE TABLE export_requests (id TEXT PRIMARY KEY, request_json TEXT NOT NULL, result_json TEXT NOT NULL);
+`;
+
 export class DatabaseStore {
+  private transactionDepth = 0;
   private connectionValue: DatabaseSync;
 
   constructor(readonly path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.connectionValue = this.open(path);
     try {
-      this.migrate();
+      this.transaction(() => this.migrate());
     } catch (error) {
       this.connectionValue.close();
+      if (path !== ":memory:")
+        try {
+          writeFileSync(
+            path + ".migration-error.json",
+            JSON.stringify(
+              {
+                time: new Date().toISOString(),
+                message: error instanceof Error ? error.message : String(error),
+              },
+              null,
+              2,
+            ),
+            "utf8",
+          );
+        } catch {
+          /* Original data is kept even when diagnostic writing is unavailable. */
+        }
       throw error;
     }
   }
@@ -202,14 +248,24 @@ export class DatabaseStore {
   }
 
   transaction<T>(work: () => T): T {
-    this.connectionValue.exec("BEGIN IMMEDIATE");
+    const depth = this.transactionDepth;
+    const savepoint = `nested_${depth}`;
+    this.connectionValue.exec(
+      depth ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE",
+    );
+    this.transactionDepth++;
     try {
       const result = work();
-      this.connectionValue.exec("COMMIT");
+      this.connectionValue.exec(depth ? `RELEASE ${savepoint}` : "COMMIT");
       return result;
     } catch (error) {
-      this.connectionValue.exec("ROLLBACK");
+      this.connectionValue.exec(
+        depth ? `ROLLBACK TO ${savepoint}` : "ROLLBACK",
+      );
+      if (depth) this.connectionValue.exec(`RELEASE ${savepoint}`);
       throw error;
+    } finally {
+      this.transactionDepth -= 1;
     }
   }
 
@@ -222,10 +278,62 @@ export class DatabaseStore {
 
   replaceFrom(source: string): void {
     if (this.path === ":memory:") throw new Error("内存数据库不能恢复");
+    const staged = `${this.path}.restore-${Date.now()}`;
+    copyFileSync(source, staged);
+    try {
+      const probe = new DatabaseStore(staged);
+      try {
+        if (
+          probe.prepare("PRAGMA integrity_check").get()?.integrity_check !==
+          "ok"
+        )
+          throw new Error("备份数据库完整性检查失败");
+        if (probe.prepare("PRAGMA foreign_key_check").all().length)
+          throw new Error("备份数据库关联检查失败");
+        probe.connection.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      } finally {
+        probe.close();
+      }
+    } catch (error) {
+      if (existsSync(staged)) unlinkSync(staged);
+      throw error;
+    }
+    this.connectionValue.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    const rollback = `${this.path}.pre-restore`;
+    copyFileSync(this.path, rollback);
     this.connectionValue.close();
-    copyFileSync(source, this.path);
-    this.connectionValue = this.open(this.path);
-    this.migrate();
+    try {
+      for (const suffix of ["-wal", "-shm"])
+        if (existsSync(this.path + suffix)) unlinkSync(this.path + suffix);
+      copyFileSync(staged, this.path);
+      this.connectionValue = this.open(this.path);
+    } catch (error) {
+      copyFileSync(rollback, this.path);
+      this.connectionValue = this.open(this.path);
+      throw error;
+    } finally {
+      if (existsSync(staged)) unlinkSync(staged);
+    }
+  }
+
+  dataRevision(): number {
+    return Number(
+      this.prepare("SELECT revision FROM data_version WHERE id = 1").get()!
+        .revision,
+    );
+  }
+
+  captureSources(): void {
+    this.prepare(
+      `INSERT OR IGNORE INTO shift_sources(shift_id, import_id, source_active, payload_json)
+      SELECT s.id, s.schedule_import_id, s.active, json_object('id', s.id, 'date', s.date, 'kind', s.kind,
+        'label', s.label, 'startTime', s.start_time, 'endTime', s.end_time,
+        'people', json((SELECT COALESCE(json_group_array(json_object('id', ss.id, 'memberId', ss.scheduled_member_id,
+          'name', m.name, 'position', ss.position)), '[]') FROM shift_slots ss LEFT JOIN members m ON m.id = ss.scheduled_member_id
+          WHERE ss.shift_id = s.id AND ss.slot_source = 'imported' AND ss.is_vacant = 0)))
+      FROM shifts s JOIN schedule_imports si ON si.id = s.schedule_import_id
+      WHERE si.source_type = 'file' AND s.work_type = 'regular'`,
+    ).run();
   }
 
   close(): void {
@@ -241,9 +349,13 @@ export class DatabaseStore {
   }
 
   private migrate(): void {
-    const row = this.connectionValue.prepare("PRAGMA user_version").get() as { user_version: number };
+    const row = this.connectionValue.prepare("PRAGMA user_version").get() as {
+      user_version: number;
+    };
     if (row.user_version > SCHEMA_VERSION) {
-      throw new Error(`数据库版本 ${row.user_version} 高于应用支持版本 ${SCHEMA_VERSION}`);
+      throw new Error(
+        `数据库版本 ${row.user_version} 高于应用支持版本 ${SCHEMA_VERSION}`,
+      );
     }
     if (row.user_version < 1) {
       this.transaction(() => {
@@ -261,6 +373,47 @@ export class DatabaseStore {
       this.transaction(() => {
         this.connectionValue.exec(MIGRATION_3);
         this.connectionValue.exec("PRAGMA user_version = 3");
+      });
+    }
+    if (row.user_version < 4) {
+      this.transaction(() => {
+        this.connectionValue.exec(MIGRATION_4);
+        this.captureSources();
+        for (const table of [
+          "members",
+          "shifts",
+          "shift_slots",
+          "attendance_records",
+          "leave_records",
+          "schedule_imports",
+          "settings",
+        ]) {
+          for (const action of ["INSERT", "UPDATE", "DELETE"]) {
+            this.connectionValue
+              .exec(`CREATE TRIGGER dv_${table}_${action} AFTER ${action} ON ${table}
+              BEGIN UPDATE data_version SET revision = revision + 1 WHERE id = 1; END`);
+          }
+        }
+        this.connectionValue
+          .exec(`CREATE TRIGGER shift_revision AFTER UPDATE ON shifts WHEN NEW.revision = OLD.revision
+          BEGIN UPDATE shifts SET revision = revision + 1 WHERE id = NEW.id; END`);
+        for (const table of [
+          "shift_slots",
+          "attendance_records",
+          "leave_records",
+        ]) {
+          for (const action of ["INSERT", "UPDATE", "DELETE"]) {
+            const ref = action === "DELETE" ? "OLD" : "NEW";
+            const shift =
+              table === "leave_records"
+                ? `(SELECT shift_id FROM shift_slots WHERE id = ${ref}.shift_slot_id)`
+                : `${ref}.shift_id`;
+            this.connectionValue
+              .exec(`CREATE TRIGGER sr_${table}_${action} AFTER ${action} ON ${table}
+              BEGIN UPDATE shifts SET revision = revision + 1 WHERE id = ${shift}; END`);
+          }
+        }
+        this.connectionValue.exec("PRAGMA user_version = 4");
       });
     }
   }

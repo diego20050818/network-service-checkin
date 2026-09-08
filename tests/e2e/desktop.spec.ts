@@ -1,167 +1,837 @@
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  writeFile,
+  rm,
+} from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import ExcelJS from "exceljs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { _electron as electron, expect, test } from "@playwright/test";
+import {
+  _electron as electron,
+  expect,
+  test,
+  type ElectronApplication,
+  type Page,
+} from "@playwright/test";
 import { formatLocalDate } from "../../apps/desktop/src/domain/time";
 import { DatabaseStore } from "../../apps/desktop/src/main/database";
 import { AttendanceService } from "../../apps/desktop/src/main/services/attendance-service";
 import { MemberService } from "../../apps/desktop/src/main/services/member-service";
-import { addScheduleImport, addShift } from "../../apps/desktop/src/main/services/test-helpers.test-util";
+import {
+  addScheduleImport,
+  addShift,
+} from "../../apps/desktop/src/main/services/test-helpers.test-util";
+import { IPC_CHANNELS } from "../../apps/desktop/src/shared/ipc-channels";
 
-test("桌面应用以隔离渲染进程启动并可访问主要页面", async () => {
-  const userData = await mkdtemp(join(tmpdir(), "checkin-e2e-"));
-  const appPath = resolve(__dirname, "../../apps/desktop");
-  const launchEnv = { ...process.env, NODE_ENV: "test" };
-  delete launchEnv.ELECTRON_RUN_AS_NODE;
-  const application = await electron.launch({
-    // The managed Windows test runner blocks Chromium's restricted child token;
-    // no-sandbox is limited to E2E launches and is never used by the packaged app.
-    args: [appPath, `--user-data-dir=${userData}`, "--disable-gpu", "--disable-breakpad", "--no-sandbox"],
-    env: launchEnv,
-  });
-  try {
-    const window = await application.firstWindow();
-    await expect(window).toHaveTitle("网络服务小组签到与月报");
-    await expect(window.getByText("今日无班次")).toBeVisible();
-    await expect(window.getByRole("button", { name: "导入排班" })).toBeVisible();
-    expect(await window.evaluate(() => typeof (globalThis as unknown as { process?: unknown }).process)).toBe("undefined");
-
-    await window.getByRole("button", { name: "排班与成员", exact: true }).click();
-    await expect(window.getByRole("button", { name: "下载排班模板" })).toBeVisible();
-    await expect(window.getByRole("button", { name: "下载人员模板" })).toBeVisible();
-
-    await window.getByRole("button", { name: "看板", exact: true }).click();
-    await expect(window.getByRole("heading", { name: "出勤与计薪工时" })).toBeVisible();
-    await window.getByRole("button", { name: "请假与加班", exact: true }).click();
-    await expect(window.getByRole("heading", { name: "请假与加班" })).toBeVisible();
-    await expect(window.getByRole("heading", { name: "加班安排", exact: true })).toBeVisible();
-    await window.getByRole("button", { name: "输出本月绩效文件", exact: true }).click();
-    await expect(window.getByRole("heading", { name: "输出本月绩效文件" })).toBeVisible();
-    await window.getByRole("button", { name: "设置", exact: true }).click();
-    await expect(window.getByRole("heading", { name: "文件存放位置" })).toBeVisible();
-    await expect(window.getByRole("heading", { name: "备份管理" })).toBeVisible();
-    await expect(window.getByLabel("更新模式")).toBeDisabled();
-  } finally {
-    await application.close();
-    await rm(userData, { recursive: true, force: true });
+const active: Array<{ app: ElectronApplication; directory: string }> = [];
+test.afterEach(async ({}, info) => {
+  for (const { app, directory } of active.splice(0)) {
+    if (info.status !== info.expectedStatus) {
+      const page = app.windows()[0];
+      if (page)
+        await page
+          .screenshot({ path: info.outputPath("failure.png"), fullPage: true })
+          .catch(() => undefined);
+    }
+    await app.evaluate(({ app }) => app.exit()).catch(() => undefined);
+    await app.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
   }
 });
-
-test("打包后的桌面可执行文件可独立启动", async () => {
-  const executablePath = resolve(__dirname, "../../apps/desktop/release/win-unpacked/网络服务小组签到与月报.exe");
-  test.skip(!existsSync(executablePath), "请先执行 npm run package:win");
-  const userData = await mkdtemp(join(tmpdir(), "checkin-packaged-e2e-"));
-  const launchEnv = { ...process.env, NODE_ENV: "test" };
-  delete launchEnv.ELECTRON_RUN_AS_NODE;
-  const application = await electron.launch({
-    executablePath,
-    args: [`--user-data-dir=${userData}`, "--disable-gpu", "--disable-breakpad", "--no-sandbox"],
-    env: launchEnv,
-  });
-  try {
-    const window = await application.firstWindow();
-    await expect(window).toHaveTitle("网络服务小组签到与月报");
-    await expect(window.getByText("今日无班次")).toBeVisible();
-    expect(await window.evaluate(() => typeof (globalThis as unknown as { process?: unknown }).process)).toBe("undefined");
-    await window.getByRole("button", { name: "设置", exact: true }).click();
-    await expect(window.getByRole("switch", { name: "开机自启动" })).toBeEnabled();
-    await expect(window.getByRole("heading", { name: "当前使用的文件" })).toBeVisible();
-  } finally {
-    await application.close();
-    await rm(userData, { recursive: true, force: true });
-  }
-});
-
-test("无卡片日历看板和文件编辑区适配 1100×700 与 1440×900", async () => {
-  const userData = await mkdtemp(join(tmpdir(), "checkin-responsive-e2e-"));
-  const dataDirectory = join(userData, "data");
-  await mkdir(dataDirectory, { recursive: true });
-  const store = new DatabaseStore(join(dataDirectory, "app.sqlite3"));
+async function launchFixture() {
+  const directory = await mkdtemp(join(tmpdir(), "checkin-v060-e2e-"));
+  const data = join(directory, "data");
+  await mkdir(data, { recursive: true });
+  const store = new DatabaseStore(join(data, "app.sqlite3"));
   const members = new MemberService(store);
   const attendance = new AttendanceService(store, members);
   const today = formatLocalDate(new Date());
   const importId = addScheduleImport(store, today.slice(0, 7));
-  const arrived = addShift(store, members, { importId, date: today, kind: "desk", startTime: "00:01", endTime: "00:31", paidMinutes: 30, people: ["甲"] });
-  addShift(store, members, { importId, date: today, kind: "desk", startTime: "01:00", endTime: "02:00", paidMinutes: 60, people: ["乙"] });
-  addShift(store, members, { importId, date: today, kind: "maintenance", startTime: "23:00", endTime: "23:59", paidMinutes: 59, people: ["甲", "乙", "丙"] });
-  const currentHour = new Date().getHours();
-  const hasCurrentShift = currentHour < 23;
-  if (hasCurrentShift) {
-    addShift(store, members, {
-      importId,
-      date: today,
-      kind: "weekend",
-      startTime: `${String(currentHour).padStart(2, "0")}:00`,
-      endTime: `${String(currentHour + 1).padStart(2, "0")}:00`,
-      paidMinutes: 60,
-      people: ["丁"],
-    });
-  }
-  attendance.addManual({ slotId: arrived.slotIds[0]!, memberId: arrived.memberIds.甲!, historicalPunchTime: null });
+  const current = addShift(store, members, {
+    importId,
+    date: today,
+    kind: "desk",
+    startTime: "00:00",
+    endTime: "23:59",
+    paidMinutes: 1439,
+    people: ["林清", "陈嘉", "周宁"],
+  });
+  members.save({
+    name: "何悦",
+    college: "信息科学技术学院",
+    studentId: "00123456",
+  });
+  const ended = addShift(store, members, {
+    importId,
+    date: today,
+    kind: "maintenance",
+    startTime: "00:01",
+    endTime: "00:06",
+    paidMinutes: 5,
+    people: ["陈嘉"],
+  });
+  attendance.addManual({
+    slotId: ended.slotIds[0]!,
+    memberId: ended.memberIds.陈嘉!,
+  });
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  const tomorrow = formatLocalDate(next);
+  const future = addShift(store, members, {
+    importId,
+    date: tomorrow,
+    kind: "maintenance",
+    startTime: "09:07",
+    endTime: "10:22",
+    paidMinutes: 75,
+    people: ["林清"],
+  });
+  addShift(store, members, {
+    importId,
+    date: tomorrow,
+    kind: "desk",
+    startTime: "09:30",
+    endTime: "10:00",
+    paidMinutes: 30,
+    people: ["何悦"],
+  });
+  addShift(store, members, {
+    importId,
+    date: tomorrow,
+    kind: "maintenance",
+    startTime: "10:22",
+    endTime: "10:27",
+    paidMinutes: 5,
+    people: ["林清"],
+  });
+  addShift(store, members, {
+    importId,
+    date: tomorrow,
+    kind: "desk",
+    startTime: "10:27",
+    endTime: "10:32",
+    paidMinutes: 5,
+    people: ["陈嘉"],
+  });
   store.close();
-  const appPath = resolve(__dirname, "../../apps/desktop");
-  const screenshotDirectory = resolve(__dirname, "screenshots");
-  await mkdir(screenshotDirectory, { recursive: true });
-  const launchEnv = { ...process.env, NODE_ENV: "test" };
-  delete launchEnv.ELECTRON_RUN_AS_NODE;
-  const application = await electron.launch({ args: [appPath, `--user-data-dir=${userData}`, "--disable-gpu", "--disable-breakpad", "--no-sandbox"], env: launchEnv });
-  try {
-    const window = await application.firstWindow();
-    await window.setViewportSize({ width: 1100, height: 700 });
-    await expect(window.getByRole("heading", { name: `今日共 ${hasCurrentShift ? 4 : 3} 个班次` })).toBeVisible();
-    await expect(window.getByText("负责人：").first()).toBeVisible();
-    await expect(window.locator(".day-agenda-table")).toBeVisible();
-    await expect(window.locator(".shift-card")).toHaveCount(0);
-    if (hasCurrentShift) await expect(window.locator(".shift-countdown")).toContainText("距结束");
-    await window.screenshot({ path: join(screenshotDirectory, "checkin-settings-1100x700.png"), fullPage: true });
-    await window.getByRole("button", { name: "看板", exact: true }).click();
-    await expect(window.getByRole("heading", { name: "周班表" })).toBeVisible();
-    await expect(window.getByLabel("到岗状态图例")).toContainText("到岗未到岗未到班");
-    await expect(window.locator(".weekly-schedule-card")).toHaveCount(0);
-    await expect(window.locator(".week-person.arrived")).toContainText("甲");
-    await expect(window.locator('[title*="乙：未到岗"]').first()).toBeVisible();
-    if (currentHour < 23) await expect(window.locator(".week-person.upcoming").first()).toBeVisible();
-    if (currentHour >= 4) expect(await window.getByLabel("周班表日历").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-    expect(await window.evaluate(() => document.documentElement.scrollWidth <= globalThis.innerWidth)).toBe(true);
-    await window.screenshot({ path: join(screenshotDirectory, "dashboard-settings-1100x700.png"), fullPage: true });
+  const env = { ...process.env, NODE_ENV: "test" };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const app = await electron.launch({
+    args: [
+      resolve(__dirname, "../../apps/desktop"),
+      "--user-data-dir=" + directory,
+      "--disable-gpu",
+      "--disable-breakpad",
+      "--no-sandbox",
+    ],
+    env,
+  });
+  active.push({ app, directory });
+  const page = await app.firstWindow();
+  await expect(
+    page.getByRole("heading", { name: "今日签到", exact: true }),
+  ).toBeVisible();
+  return { app, page, directory, today, tomorrow, current, future };
+}
+async function nav(page: Page, name: string) {
+  await page
+    .getByRole("navigation", { name: "主导航" })
+    .getByRole("button", { name, exact: true })
+    .click();
+}
+async function member(page: Page, label: string, name: string) {
+  const field = page.getByRole("combobox", { name: label, exact: true });
+  await field.fill(name);
+  await page.getByRole("option").filter({ hasText: name }).first().click();
+}
 
-    await window.getByRole("button", { name: "请假与加班", exact: true }).click();
-    const firstAdjustment = window.locator(".adjustment-shift-card").first();
-    await firstAdjustment.getByLabel("添加办公人员").selectOption({ label: "丙" });
-    await firstAdjustment.getByRole("button", { name: "添加", exact: true }).click();
-    await expect(window.getByText("办公人员已加入本次班次")).toBeVisible();
-    await window.locator('button:not([disabled])', { hasText: "办理请假" }).first().click();
-    await window.getByRole("button", { name: "保存", exact: true }).first().click();
-    await expect(window.getByText(/请假 · 无代班/).first()).toBeVisible();
-    await window.getByLabel("加班人员").selectOption({ label: "甲" });
-    await window.getByRole("button", { name: "添加加班", exact: true }).click();
-    await expect(window.getByText("加班已预约，签到或人工补记后计入薪酬工时")).toBeVisible();
-
-    await window.getByRole("button", { name: "输出本月绩效文件", exact: true }).click();
-    const performanceItem = window.locator(".file-item").filter({ hasText: "全员绩效考核表" });
-    await performanceItem.getByRole("button").click();
-    await expect(window.getByRole("heading", { name: "工时与评分" })).toBeVisible();
-    expect(await window.locator(".report-editor").evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(650);
-    expect(await window.evaluate(() => document.documentElement.scrollWidth <= globalThis.innerWidth)).toBe(true);
-    await window.screenshot({ path: join(screenshotDirectory, "performance-settings-1100x700.png"), fullPage: true });
-
-    await window.setViewportSize({ width: 1440, height: 900 });
-    const wageItem = window.locator(".file-item").filter({ hasText: "工资考核表" });
-    await wageItem.getByRole("button").click();
-    await expect(window.locator(".report-editor").getByRole("heading", { name: "工资考核表", exact: true })).toBeVisible();
-    expect(await window.locator(".report-editor").evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(650);
-    await window.screenshot({ path: join(screenshotDirectory, "wage-settings-1440x900.png"), fullPage: true });
-
-    await window.setViewportSize({ width: 1100, height: 700 });
-    await window.getByRole("button", { name: "设置", exact: true }).click();
-    await expect(window.getByRole("heading", { name: "文件存放位置" })).toBeVisible();
-    await expect(window.locator(".settings-file-table strong", { hasText: "fixture.xlsx" })).toBeVisible();
-    await expect(window.getByRole("heading", { name: "备份管理" })).toBeVisible();
-    expect(await window.evaluate(() => document.documentElement.scrollWidth <= globalThis.innerWidth)).toBe(true);
-    await window.screenshot({ path: join(screenshotDirectory, "settings-1100x700.png"), fullPage: true });
-  } finally {
-    await application.close();
-    await rm(userData, { recursive: true, force: true });
+test("隔离渲染器、主页面与无横向溢出", async () => {
+  const { page } = await launchFixture();
+  expect(
+    await page.evaluate(
+      () => typeof (globalThis as { process?: unknown }).process,
+    ),
+  ).toBe("undefined");
+  for (const name of [
+    "成员与排班源",
+    "工时记录",
+    "请假与加班",
+    "月度导出",
+    "设置",
+    "日历排班",
+  ]) {
+    await nav(page, name);
+    await expect(
+      page.getByRole("heading", {
+        name: name === "工时记录" ? "工时汇总" : name,
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
   }
+  await expect(page.locator(".full-calendar")).toBeVisible();
+  await expect(page.locator(".occurrence-event").first()).toBeAttached();
+});
+
+test("成员编辑使用独立会话，取消保留旧资料", async () => {
+  const { page } = await launchFixture();
+  await nav(page, "成员与排班源");
+  await page.getByRole("button", { name: "编辑 林清", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "姓名", exact: true })
+    .fill("错误名字");
+  await page
+    .getByRole("dialog", { name: "编辑 林清" })
+    .getByText("取消", { exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "成员资料尚未保存" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "放弃修改", exact: true }).click();
+  await page.getByRole("button", { name: "编辑 陈嘉", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "姓名", exact: true }),
+  ).toHaveValue("陈嘉");
+  await page
+    .getByRole("textbox", { name: "所属学院", exact: true })
+    .fill("测试学院");
+  await page.getByRole("button", { name: "保存成员", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "编辑 陈嘉" })).toHaveCount(0);
+  const result = await page.evaluate(() => window.checkinApi.listMembers());
+  expect(result.find((m) => m.name === "林清")?.college).toBe("");
+  expect(result.find((m) => m.name === "陈嘉")?.college).toBe("测试学院");
+});
+
+test("650ms 内切页、切月以及正常关窗都会保存最新草稿", async () => {
+  const { page, app, directory } = await launchFixture();
+  await nav(page, "月度导出");
+  const advice = page.getByRole("textbox", {
+    name: "完成的工作 1",
+    exact: true,
+  });
+  await advice.fill("快速切页也应保存");
+  await nav(page, "设置");
+  await nav(page, "月度导出");
+  await expect(advice).toHaveValue("快速切页也应保存");
+  await advice.fill("切月前的最后输入");
+  const period = page.getByLabel("所属月份", { exact: true });
+  const value = await period.inputValue();
+  const [year, month] = value.split("-").map(Number);
+  const next = new Date(year!, month!, 1);
+  const nextKey = formatLocalDate(next).slice(0, 7);
+  await period.fill(nextKey);
+  await expect(period).toHaveValue(nextKey);
+  await expect(advice).toHaveValue("");
+  await period.fill(value);
+  await expect(advice).toHaveValue("切月前的最后输入");
+  await advice.fill("关窗前最后输入");
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]!.close();
+  });
+  await expect.poll(async () => app.windows().length).toBe(0);
+  const probe = new DatabaseStore(join(directory, "data", "app.sqlite3"));
+  try {
+    const row = probe
+      .prepare(
+        "SELECT payload_json FROM report_drafts WHERE year=? AND month=?",
+      )
+      .get(year!, month!);
+    expect(JSON.parse(String(row!.payload_json)).workItems[0]).toBe(
+      "关窗前最后输入",
+    );
+  } finally {
+    probe.close();
+  }
+});
+
+test("人员搜索不沿用旧 ID，增员、移除、恢复保持原席位", async () => {
+  const { page, current } = await launchFixture();
+  const row = page.locator(".agenda-row.current").first();
+  await row.getByRole("button", { name: "添加办公人员", exact: false }).click();
+  const search = page.getByRole("combobox", {
+    name: "添加办公人员",
+    exact: true,
+  });
+  await search.fill("不存在的人员");
+  await search.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "加入本班", exact: true }),
+  ).toBeDisabled();
+  await search.fill("何悦");
+  await page.getByRole("option").filter({ hasText: "何悦" }).click();
+  await page.getByRole("button", { name: "加入本班", exact: true }).click();
+  await expect(
+    row.locator(".person-label").filter({ hasText: "何悦" }),
+  ).toBeVisible();
+  const before = await page.evaluate(
+    (id) =>
+      window.checkinApi
+        .listOccurrences({
+          startDate: new Date().toLocaleDateString("en-CA"),
+          endDate: new Date().toLocaleDateString("en-CA"),
+        })
+        .then((s) => s.find((s) => s.id === id)),
+    current.shiftId,
+  );
+  const added = before!.slots.find((s) => s.scheduledMemberName === "何悦")!;
+  await row.getByRole("button", { name: "何悦的操作", exact: true }).click();
+  await page
+    .getByRole("menuitem", { name: "移除临时席位", exact: true })
+    .click();
+  await expect(
+    row.locator(".person-label").filter({ hasText: "何悦" }),
+  ).toHaveCount(0);
+  await row.getByRole("button", { name: /已撤销与已移除/ }).click();
+  await page.getByRole("button", { name: "恢复席位", exact: true }).click();
+  const after = await page.evaluate(
+    (id) =>
+      window.checkinApi
+        .getShiftsForDate(new Date().toLocaleDateString("en-CA"))
+        .then((s) => s.find((s) => s.id === id)),
+    current.shiftId,
+  );
+  expect(after!.slots.find((s) => s.scheduledMemberName === "何悦")!.id).toBe(
+    added.id,
+  );
+});
+
+test("签到重复提交防护及批量撤销只撤销本次新记录", async () => {
+  const { page, current, today } = await launchFixture();
+  const row = page.locator(".agenda-row.current").first();
+  await row
+    .getByRole("checkbox", { name: "选择 林清 签到", exact: true })
+    .press("Space");
+  await row
+    .getByRole("button", { name: "为所选 1 人签到", exact: true })
+    .dblclick();
+  await expect(
+    row.locator(".person-label").filter({ hasText: "林清" }),
+  ).toBeVisible();
+  const records = await page.evaluate(
+    (today) =>
+      window.checkinApi.listRecords({
+        startDate: today,
+        endDate: today,
+        includeRevoked: true,
+      }),
+    today,
+  );
+  expect(
+    records.filter(
+      (r) => r.shiftId === current.shiftId && r.status === "active",
+    ),
+  ).toHaveLength(1);
+  await page
+    .locator(".ui-toast")
+    .getByRole("button", { name: "撤销", exact: true })
+    .click();
+  const after = await page.evaluate(
+    (today) =>
+      window.checkinApi.listRecords({
+        startDate: today,
+        endDate: today,
+        includeRevoked: true,
+      }),
+    today,
+  );
+  expect(
+    after.filter((r) => r.shiftId === current.shiftId && r.status === "active"),
+  ).toHaveLength(0);
+  expect(
+    after.filter((r) => r.shiftId !== current.shiftId && r.status === "active"),
+  ).toHaveLength(1);
+});
+
+test("写入成功但刷新失败不会报告写入失败或重写", async () => {
+  const { app, page, today } = await launchFixture();
+  await app.evaluate(({ ipcMain }, channel) => {
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, () => {
+      throw new Error("injected refresh failure");
+    });
+  }, IPC_CHANNELS.bootstrap);
+  const row = page.locator(".agenda-row.current").first();
+  await row
+    .getByRole("checkbox", { name: "选择 林清 签到", exact: true })
+    .press("Space");
+  await row
+    .getByRole("button", { name: "为所选 1 人签到", exact: true })
+    .click();
+  await expect(
+    page.getByText("已保存，但刷新失败。请重新加载，不要重复提交。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const records = await page.evaluate(
+    (date) => window.checkinApi.listRecords({ startDate: date, endDate: date }),
+    today,
+  );
+  expect(records.filter((r) => r.actualMemberName === "林清")).toHaveLength(1);
+});
+
+test("关键页面在指定分辨率和缩放下留档", async () => {
+  const { page, app } = await launchFixture();
+  const directory = resolve(__dirname, "screenshots", "v0.6.0");
+  await mkdir(directory, { recursive: true });
+  for (const [width, height, scale] of [
+    [1366, 768, 1],
+    [1920, 1080, 1],
+    [1366, 768, 1.25],
+    [1366, 768, 1.5],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await app.evaluate(
+      ({ BrowserWindow }, zoom) =>
+        BrowserWindow.getAllWindows()[0]!.webContents.setZoomFactor(zoom),
+      scale,
+    );
+    for (const [name, key] of [
+      ["今日签到", "checkin"],
+      ["日历排班", "calendar"],
+      ["月度导出", "reports"],
+      ["成员与排班源", "members"],
+      ["设置", "settings"],
+    ] as const) {
+      await nav(page, name);
+      await expect(page.locator(".page-header")).toBeVisible();
+      if (name === "日历排班")
+        await expect(page.locator(".occurrence-event").first()).toBeAttached();
+      if (name === "月度导出")
+        await expect(page.getByText("文件目录", { exact: true })).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+      const sidebar = await page.locator(".app-sidebar").boundingBox();
+      const viewportHeight = await page.evaluate(() => innerHeight);
+      expect(
+        Math.abs(sidebar!.y + sidebar!.height - viewportHeight),
+      ).toBeLessThanOrEqual(1);
+      await page.locator(".app-main").evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      const scrolledSidebar = await page.locator(".app-sidebar").boundingBox();
+      expect(
+        Math.abs(scrolledSidebar!.y + scrolledSidebar!.height - viewportHeight),
+      ).toBeLessThanOrEqual(1);
+      await page.locator(".app-main").evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await page.screenshot({
+        path: join(directory, `${key}-${width}x${height}-${scale}.png`),
+        fullPage: false,
+        scale: "css",
+      });
+    }
+  }
+});
+
+test("日历按分钟编辑、取消及恢复，重载后保留时间与原 ID", async () => {
+  const { page, future, tomorrow } = await launchFixture();
+  await nav(page, "日历排班");
+  const event = page.locator('.occurrence-event[aria-label*="09:07"]');
+  // Tomorrow may fall in the next week.
+  if (!(await event.count()))
+    await page.getByRole("button", { name: "下一周或日", exact: true }).click();
+  await event.click();
+  await page.getByRole("button", { name: "编辑本次", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "备注", exact: true })
+    .fill("分钟时间保持原样");
+  await page.getByRole("button", { name: "保存本次安排", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "编辑本次班次", exact: true }),
+  ).toHaveCount(0);
+  const saved = await page.evaluate(
+    ({ tomorrow, id }) =>
+      window.checkinApi
+        .listOccurrences({ startDate: tomorrow, endDate: tomorrow })
+        .then((rows) => rows.find((s) => s.id === id)),
+    { tomorrow, id: future.shiftId },
+  );
+  expect(saved).toMatchObject({
+    id: future.shiftId,
+    startTime: "09:07",
+    endTime: "10:22",
+    paidMinutes: 75,
+    note: "分钟时间保持原样",
+  });
+  await event.focus();
+  await event.press("Enter");
+  await expect(
+    page.getByText("分钟时间保持原样", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "取消本次班次", exact: true }).click();
+  await page.getByRole("button", { name: "取消班次", exact: true }).click();
+  await expect(event).toHaveCount(0);
+  await page.getByRole("button", { name: /查看已取消的班次/ }).click();
+  await page.getByRole("button", { name: "详情与恢复", exact: true }).click();
+  await page.getByRole("button", { name: "恢复本次班次", exact: true }).click();
+  await expect(event).toHaveCount(1);
+  await page.reload();
+  await nav(page, "日历排班");
+  if (!(await event.count()))
+    await page.getByRole("button", { name: "下一周或日", exact: true }).click();
+  await expect(event).toHaveCount(1);
+  const shortA = page.locator('.occurrence-event[title*=" 10:22–"]');
+  const shortB = page.locator('.occurrence-event[title*=" 10:27–"]');
+  const a = await shortA.boundingBox();
+  const b = await shortB.boundingBox();
+  expect(a!.y + a!.height).toBeLessThanOrEqual(b!.y + 1);
+  await page.locator(".calendar-toolbar .ui-select-trigger").click();
+  await page.getByRole("option", { name: "日视图", exact: true }).click();
+  await expect(page.locator(".full-calendar")).toBeVisible();
+});
+
+test("草稿写入失败可以取消离开，保留输入并重试", async () => {
+  const { app, page } = await launchFixture();
+  await nav(page, "月度导出");
+  await app.evaluate(({ ipcMain }, channel) => {
+    const main = ipcMain as typeof ipcMain & {
+      _invokeHandlers: Map<string, unknown>;
+    };
+    const previous = main._invokeHandlers.get(channel);
+    (globalThis as any).__savedDraftHandler = previous;
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, () => {
+      throw new Error("injected disk full");
+    });
+  }, IPC_CHANNELS.saveReportDraft);
+  const input = page.getByRole("textbox", {
+    name: "完成的工作 1",
+    exact: true,
+  });
+  await input.fill("保存失败也不丢失");
+  await nav(page, "设置");
+  await expect(
+    page.getByRole("heading", { name: "草稿尚未保存", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "留在当前页面", exact: true }).click();
+  await expect(input).toHaveValue("保存失败也不丢失");
+  await app.evaluate(({ ipcMain }, channel) => {
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, (globalThis as any).__savedDraftHandler);
+  }, IPC_CHANNELS.saveReportDraft);
+  await page.getByRole("button", { name: "重试保存", exact: true }).click();
+  await expect(page.getByText("已保存", { exact: true })).toBeVisible();
+  await nav(page, "设置");
+  await nav(page, "月度导出");
+  await expect(input).toHaveValue("保存失败也不丢失");
+});
+
+test("旧预览迟到不能覆盖新的草稿和预览", async () => {
+  const { app, page } = await launchFixture();
+  await nav(page, "月度导出");
+  await app.evaluate(({ ipcMain }, channel) => {
+    const main = ipcMain as typeof ipcMain & {
+      _invokeHandlers: Map<string, Function>;
+    };
+    const original = main._invokeHandlers.get(channel)!;
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, async (event, draft) => {
+      const result = await original(event, draft);
+      if (draft.workItems[0] === "旧输入")
+        await new Promise((resolve) => setTimeout(resolve, 1400));
+      return result;
+    });
+  }, IPC_CHANNELS.previewReports);
+  const input = page.getByRole("textbox", {
+    name: "完成的工作 1",
+    exact: true,
+  });
+  await input.fill("旧输入");
+  await expect
+    .poll(
+      async () =>
+        await app.evaluate(
+          ({ ipcMain }, channel) =>
+            Boolean((ipcMain as any)._invokeHandlers.get(channel)),
+          IPC_CHANNELS.previewReports,
+        ),
+    )
+    .toBe(true);
+  await page.waitForTimeout(300);
+  await input.fill("最新输入");
+  await page.getByRole("button", { name: "内容预览", exact: true }).click();
+  await expect(page.locator(".preview-document")).toContainText("最新输入");
+  await page.waitForTimeout(1600);
+  await expect(page.locator(".preview-document")).toContainText("最新输入");
+  await expect(page.locator(".preview-document")).not.toContainText("旧输入");
+});
+
+test("日历拖动持久化，拉伸保存失败复原布局和数据库", async () => {
+  const { app, page, future, tomorrow } = await launchFixture();
+  await nav(page, "日历排班");
+  const event = page.locator(`[data-occurrence-id="${future.shiftId}"]`);
+  if (!(await event.count()))
+    await page.getByRole("button", { name: "下一周或日", exact: true }).click();
+  await expect(event).toBeVisible();
+  const before = await event.boundingBox();
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(
+    before!.x + before!.width / 2,
+    before!.y + 20 + before!.height * 0.8,
+    { steps: 15 },
+  );
+  await page.mouse.up();
+  await page.getByRole("button", { name: "保存本次修改", exact: true }).click();
+  const fetch = () =>
+    page.evaluate(
+      ({ date, id }) =>
+        window.checkinApi
+          .listOccurrences({ startDate: date, endDate: date })
+          .then((s) => s.find((s) => s.id === id)),
+      { date: tomorrow, id: future.shiftId },
+    );
+  await expect.poll(async () => (await fetch())!.startTime).not.toBe("09:07");
+  const moved = (await fetch())!;
+  expect(moved.paidMinutes).toBe(75);
+  expect(moved.slots[0]!.id).toBe(future.slotIds[0]);
+  await expect(event).toHaveAttribute("title", new RegExp(moved.startTime));
+  await app.evaluate(({ ipcMain }, channel) => {
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, () => {
+      throw new Error("injected calendar write failure");
+    });
+  }, IPC_CHANNELS.saveOccurrence);
+  const box = await event.boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height - 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height + 36, {
+    steps: 15,
+  });
+  await page.mouse.up();
+  await page.getByRole("button", { name: "保存本次修改", exact: true }).click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "injected calendar write failure" }),
+  ).toBeVisible();
+  expect(await fetch()).toMatchObject({
+    startTime: moved.startTime,
+    endTime: moved.endTime,
+    paidMinutes: 75,
+  });
+  await expect
+    .poll(async () =>
+      Math.abs((await event.boundingBox())!.height - box!.height),
+    )
+    .toBeLessThanOrEqual(1);
+});
+
+test("导入成员须先预览，应用后更新成员列表并保留学号前导零", async () => {
+  const { app, page, directory } = await launchFixture();
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet("成员").addRows([
+    ["姓名", "学号", "学院"],
+    ["新成员", "00012345", "信息学院"],
+  ]);
+  const path = join(directory, "members.xlsx");
+  await workbook.xlsx.writeFile(path);
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [path],
+    });
+  }, path);
+  await nav(page, "成员与排班源");
+  await page
+    .getByRole("button", { name: "选择成员信息表并预览", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "导入预览", exact: true }),
+  ).toBeVisible();
+  expect(
+    (await page.evaluate(() => window.checkinApi.listMembers())).some(
+      (m) => m.name === "新成员",
+    ),
+  ).toBe(false);
+  await page
+    .getByRole("button", { name: "确认应用导入", exact: true })
+    .dblclick();
+  await expect(
+    page.getByRole("dialog", { name: "导入预览", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "编辑 新成员", exact: true }),
+  ).toBeVisible();
+  expect(
+    (await page.evaluate(() => window.checkinApi.listMembers())).find(
+      (m) => m.name === "新成员",
+    )?.studentId,
+  ).toBe("00012345");
+});
+
+test("最近操作撤销后立即刷新当前记录页", async () => {
+  const { page } = await launchFixture();
+  const row = page.locator(".agenda-row.current").first();
+  await row
+    .getByRole("checkbox", { name: "选择 林清 签到", exact: true })
+    .press("Space");
+  await row
+    .getByRole("button", { name: "为所选 1 人签到", exact: true })
+    .click();
+  await nav(page, "工时记录");
+  await page.getByRole("button", { name: "签到明细", exact: true }).click();
+  const record = page.locator("tbody tr").filter({ hasText: "林清" });
+  await expect(record).not.toContainText("已撤销");
+  await page.getByRole("button", { name: /最近操作/ }).click();
+  await page
+    .getByRole("dialog", { name: "最近操作", exact: true })
+    .getByRole("button", { name: "撤销", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "最近操作", exact: true })
+    .getByRole("button", { name: "关闭", exact: true })
+    .click();
+  await expect(record).toContainText("已撤销");
+});
+
+test("0.5.1 二进制产生的真实 v3 数据由候选二进制备份并升级", async () => {
+  const oldExe = resolve(
+    __dirname,
+    "../../.tmp/v051-binary/网络服务小组签到与月报.exe",
+  );
+  const candidateExe = resolve(
+    __dirname,
+    "../../apps/desktop/release/candidate-0.6.0/win-unpacked/网络服务小组签到与月报.exe",
+  );
+  test.skip(
+    !existsSync(oldExe) || !existsSync(candidateExe),
+    "先保留 0.5.1 解包目录并构建 0.6.0 候选包",
+  );
+  const directory = await mkdtemp(join(tmpdir(), "checkin-binary-upgrade-"));
+  const env = { ...process.env, NODE_ENV: "test" };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const args = [
+    "--user-data-dir=" + directory,
+    "--disable-gpu",
+    "--disable-breakpad",
+    "--no-sandbox",
+  ];
+  const old = await electron.launch({ executablePath: oldExe, args, env });
+  try {
+    expect(await old.evaluate(({ app }) => app.getVersion())).toBe("0.5.1");
+    const page = await old.firstWindow();
+    await page.waitForFunction(() => Boolean(window.checkinApi));
+    await page.evaluate(async () => {
+      const member = await window.checkinApi.saveMember({
+        name: "旧版验收成员",
+        studentId: "00001234",
+      });
+      const overtime = await window.checkinApi.createOvertime({
+        date: "2026-09-01",
+        startTime: "09:07",
+        endTime: "10:22",
+        memberId: member.id,
+      });
+      await window.checkinApi.addManualAttendance({
+        slotId: overtime.slotId,
+        memberId: member.id,
+      });
+      const draft = await window.checkinApi.getReportDraft(2026, 9);
+      await window.checkinApi.saveReportDraft({
+        ...draft,
+        advice: "旧安装包生成的草稿",
+      });
+    });
+  } finally {
+    await old.close();
+  }
+  const database = join(directory, "data", "app.sqlite3");
+  const previous = new DatabaseSync(database, { readOnly: true });
+  const tables = [
+    "members",
+    "shifts",
+    "shift_slots",
+    "attendance_records",
+    "report_drafts",
+  ];
+  const before = Object.fromEntries(
+    tables.map((name) => [
+      name,
+      previous.prepare("SELECT * FROM " + name + " ORDER BY id").all(),
+    ]),
+  );
+  expect(previous.prepare("PRAGMA user_version").get()!.user_version).toBe(3);
+  previous.close();
+  const app = await electron.launch({
+    executablePath: candidateExe,
+    args,
+    env,
+  });
+  active.push({ app, directory });
+  const page = await app.firstWindow();
+  expect(
+    await app.evaluate(({ app }) => ({
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+    })),
+  ).toEqual({ version: "0.6.0", packaged: true });
+  await expect(
+    page.getByRole("heading", { name: "今日签到", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => typeof (globalThis as { process?: unknown }).process,
+    ),
+  ).toBe("undefined");
+  await nav(page, "设置");
+  const updates = await page.evaluate(() => window.checkinApi.getUpdateState());
+  expect(updates.currentVersion).toBe("0.6.0");
+  expect(updates.supported).toBe(true);
+  const probe = new DatabaseSync(database, { readOnly: true });
+  try {
+    for (const table of tables) {
+      const columns = Object.keys(before[table]![0]!);
+      expect(
+        probe
+          .prepare(
+            "SELECT " + columns.join(",") + " FROM " + table + " ORDER BY id",
+          )
+          .all(),
+      ).toEqual(before[table]);
+    }
+    expect(probe.prepare("PRAGMA user_version").get()!.user_version).toBe(4);
+  } finally {
+    probe.close();
+  }
+  const upgrades = join(directory, "data", "upgrade-backups");
+  const folders = await readdir(upgrades);
+  expect(folders).toHaveLength(1);
+  const manifest = JSON.parse(
+    await readFile(join(upgrades, folders[0]!, "manifest.json"), "utf8"),
+  );
+  const backup = new DatabaseSync(join(upgrades, folders[0]!, "app.sqlite3"), {
+    readOnly: true,
+  });
+  expect(backup.prepare("PRAGMA user_version").get()!.user_version).toBe(3);
+  backup.close();
+  await mkdir(resolve(__dirname, "../../.tmp/validation"), { recursive: true });
+  await writeFile(
+    resolve(__dirname, "../../.tmp/validation/binary-upgrade.json"),
+    JSON.stringify(
+      {
+        oldVersion: "0.5.1",
+        newVersion: "0.6.0",
+        before,
+        backupManifest: manifest,
+        allOriginalColumnsEqual: true,
+        installerExecution: false,
+      },
+      null,
+      2,
+    ),
+  );
 });
