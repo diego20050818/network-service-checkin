@@ -276,6 +276,27 @@ export interface Settings {
   latePenaltyPoints: number;
 }
 
+export type ShiftTimeKey =
+  | "weekdayDesk1"
+  | "weekdayDesk2"
+  | "weekdayDesk3"
+  | "weekdayDesk4"
+  | "maintenance"
+  | "weekendMorning"
+  | "weekendAfternoon";
+
+export interface ShiftTimeRange {
+  startTime: string;
+  endTime: string;
+}
+
+export type ShiftTimeSettings = Record<ShiftTimeKey, ShiftTimeRange>;
+
+export interface ShiftTimeSettingsUpdateResult {
+  settings: ShiftTimeSettings;
+  updatedShiftCount: number;
+}
+
 export interface UpdateSettings {
   mode: UpdateMode;
 }
@@ -452,6 +473,10 @@ export interface CheckinApi {
   saveMember(member: Partial<Member> & { name: string }): Promise<Member>;
   getSettings(): Promise<Settings>;
   updateSettings(settings: Settings): Promise<Settings>;
+  getShiftTimeSettings(): Promise<ShiftTimeSettings>;
+  updateShiftTimeSettings(
+    settings: ShiftTimeSettings,
+  ): Promise<ShiftTimeSettingsUpdateResult>;
   getUpdateSettings(): Promise<UpdateSettings>;
   setUpdateMode(mode: UpdateMode): Promise<UpdateSettings>;
   getUpdateState(): Promise<UpdateState>;

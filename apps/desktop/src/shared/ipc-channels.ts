@@ -37,6 +37,8 @@ export const IPC_CHANNELS = {
   saveMember: "members:save",
   settings: "settings:get",
   updateSettings: "settings:update",
+  shiftTimeSettings: "settings:shift-times:get",
+  updateShiftTimeSettings: "settings:shift-times:update",
   updateMode: "updates:mode",
   setUpdateMode: "updates:set-mode",
   updateState: "updates:state",

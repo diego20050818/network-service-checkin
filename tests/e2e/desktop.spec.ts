@@ -550,6 +550,42 @@ test("三人维修班多选在目标尺寸和缩放下填满工作区且不溢�
   }
 });
 
+test("设置页可修改 7 条班次时段并持久化自动工时", async () => {
+  const { page } = await launchFixture();
+  await nav(page, "设置");
+  await expect(
+    page.getByRole("heading", { name: "班次时段", exact: true }),
+  ).toBeVisible();
+  for (const label of ["周末上午开始时间", "周末上午结束时间"]) {
+    const minute = page
+      .getByRole("group", { name: label, exact: true })
+      .getByRole("spinbutton")
+      .nth(1);
+    await minute.click();
+    await minute.press("1");
+    await minute.press("5");
+  }
+  await expect(
+    page
+      .getByRole("group", { name: "周末上午", exact: true })
+      .getByText("计入工时：3 小时", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "保存班次时段", exact: true })
+    .click();
+  await expect(
+    page.getByText("班次时段已保存，同步 0 个正式班次", { exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => window.checkinApi.getShiftTimeSettings())).toMatchObject({
+    weekendMorning: { startTime: "09:15", endTime: "12:15" },
+  });
+  await nav(page, "成员与排班源");
+  await nav(page, "设置");
+  await expect(
+    page.getByRole("group", { name: "周末上午开始时间", exact: true }),
+  ).toContainText("9:15");
+});
+
 test("草稿写入失败可以取消离开，保留输入并重试", async () => {
   const { app, page } = await launchFixture();
   await nav(page, "月度导出");

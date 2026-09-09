@@ -136,12 +136,7 @@ function weekendMatrixDefinitions(
       for (let timeRow = row + 1; timeRow <= Math.min(section.end, row + 3); timeRow += 1) {
         const sourceRange = timeRangeFromText(cellText(worksheet.getCell(timeRow, column)));
         if (sourceRange) {
-          const range = value.includes("上午")
-            ? { startTime: "08:00", endTime: "12:00" }
-            : value.includes("下午")
-              ? { startTime: "14:30", endTime: "17:30" }
-              : sourceRange;
-          columns.push({ column, weekday: day.weekday, range });
+          columns.push({ column, weekday: day.weekday, range: sourceRange });
           break;
         }
       }

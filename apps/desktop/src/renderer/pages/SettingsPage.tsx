@@ -5,6 +5,8 @@ import type {
   BootstrapData,
   SourceFileInfo,
   Settings,
+  ShiftTimeKey,
+  ShiftTimeSettings,
   StorageOverview,
   UpdateMode,
   UpdateState,
@@ -12,6 +14,31 @@ import type {
 import { registerNavigationGuard } from "../data/navigation";
 import { PageHeader } from "../components";
 import { errorMessage } from "../App";
+
+const SHIFT_TIME_FIELDS: Array<{
+  key: ShiftTimeKey;
+  label: string;
+  group: string;
+}> = [
+  { key: "weekdayDesk1", label: "工作日坐班 1", group: "工作日坐班" },
+  { key: "weekdayDesk2", label: "工作日坐班 2", group: "工作日坐班" },
+  { key: "weekdayDesk3", label: "工作日坐班 3", group: "工作日坐班" },
+  { key: "weekdayDesk4", label: "工作日坐班 4", group: "工作日坐班" },
+  { key: "maintenance", label: "维修班", group: "维修班" },
+  { key: "weekendMorning", label: "周末上午", group: "周末坐班" },
+  { key: "weekendAfternoon", label: "周末下午", group: "周末坐班" },
+];
+
+function paidTime(startTime: string, endTime: string): string {
+  const toMinutes = (value: string) => {
+    const [hour, minute] = value.split(":").map(Number);
+    return hour! * 60 + minute!;
+  };
+  const value = Math.max(0, toMinutes(endTime) - toMinutes(startTime));
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return `${hours ? `${hours} 小时` : ""}${hours && minutes ? " " : ""}${minutes ? `${minutes} 分钟` : ""}`;
+}
 
 export function SettingsPage({
   data,
@@ -22,6 +49,9 @@ export function SettingsPage({
 }) {
   const { confirm } = useFeedback();
   const [settings, setSettings] = useState<Settings>(data.settings);
+  const [shiftTimes, setShiftTimes] = useState<ShiftTimeSettings | null>(null);
+  const [savedShiftTimes, setSavedShiftTimes] =
+    useState<ShiftTimeSettings | null>(null);
   const [startup, setStartup] = useState(data.startup);
   const [storage, setStorage] = useState<StorageOverview | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
@@ -36,18 +66,27 @@ export function SettingsPage({
   useEffect(
     () =>
       registerNavigationGuard(async () => {
-        if (JSON.stringify(settings) === JSON.stringify(data.settings))
+        const attendanceChanged =
+          JSON.stringify(settings) !== JSON.stringify(data.settings);
+        const shiftTimesChanged =
+          shiftTimes !== null &&
+          savedShiftTimes !== null &&
+          JSON.stringify(shiftTimes) !== JSON.stringify(savedShiftTimes);
+        if (!attendanceChanged && !shiftTimesChanged)
           return true;
         const discard = await confirm({
-          title: "签到设置尚未保存",
+          title: "设置尚未保存",
           message: "可以留在页面保存，或放弃这些修改。",
           confirmLabel: "放弃修改",
           cancelLabel: "留在当前页面",
         });
-        if (discard) setSettings(data.settings);
+        if (discard) {
+          setSettings(data.settings);
+          setShiftTimes(savedShiftTimes);
+        }
         return discard;
       }),
-    [settings, data.settings, confirm],
+    [settings, data.settings, shiftTimes, savedShiftTimes, confirm],
   );
   useEffect(() => setStartup(data.startup), [data.startup]);
   useEffect(() => {
@@ -58,12 +97,15 @@ export function SettingsPage({
 
   const load = useCallback(async () => {
     try {
-      const [overview, backupEntries] = await Promise.all([
+      const [overview, backupEntries, loadedShiftTimes] = await Promise.all([
         window.checkinApi.getStorageOverview(),
         window.checkinApi.listBackups(),
+        window.checkinApi.getShiftTimeSettings(),
       ]);
       setStorage(overview);
       setBackups(backupEntries);
+      setShiftTimes(loadedShiftTimes);
+      setSavedShiftTimes(loadedShiftTimes);
       setError("");
     } catch (cause) {
       setError(errorMessage(cause));
@@ -237,6 +279,85 @@ export function SettingsPage({
           }
         >
           保存签到设置
+        </AppButton>
+      </section>
+      <section className="settings-section">
+        <h2>班次时段</h2>
+        <p>
+          修改模板使用的 7 条标准时段；工时按开始和结束时间自动计算。
+          保存时只同步尚未开始、无签到历史且时间未被人工改动的正式班次。
+        </p>
+        {!shiftTimes ? (
+          <div className="settings-loading">正在读取…</div>
+        ) : (
+          <div className="shift-time-grid">
+            {SHIFT_TIME_FIELDS.map((field) => {
+              const range = shiftTimes[field.key];
+              return (
+                <fieldset className="shift-time-card" key={field.key}>
+                  <legend>{field.label}</legend>
+                  <span>{field.group}</span>
+                  <div className="shift-time-inputs">
+                    <label>
+                      开始
+                      <AppInput
+                        type="time"
+                        aria-label={`${field.label}开始时间`}
+                        value={range.startTime}
+                        onChange={(event) =>
+                          setShiftTimes({
+                            ...shiftTimes,
+                            [field.key]: {
+                              ...range,
+                              startTime: event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      结束
+                      <AppInput
+                        type="time"
+                        aria-label={`${field.label}结束时间`}
+                        value={range.endTime}
+                        onChange={(event) =>
+                          setShiftTimes({
+                            ...shiftTimes,
+                            [field.key]: {
+                              ...range,
+                              endTime: event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <small>计入工时：{paidTime(range.startTime, range.endTime)}</small>
+                </fieldset>
+              );
+            })}
+          </div>
+        )}
+        <AppButton
+          disabled={Boolean(busy) || !shiftTimes}
+          onClick={() =>
+            shiftTimes &&
+            run("shift-time-settings", async () => {
+              const result =
+                await window.checkinApi.updateShiftTimeSettings(shiftTimes);
+              setShiftTimes(result.settings);
+              setSavedShiftTimes(result.settings);
+              try {
+                await onChanged();
+              } catch {
+                return `班次时段已保存，同步 ${result.updatedShiftCount} 个正式班次，但页面刷新失败`;
+              }
+              return `班次时段已保存，同步 ${result.updatedShiftCount} 个正式班次`;
+            })
+          }
+        >
+          保存班次时段
         </AppButton>
       </section>
       <section className="settings-section">

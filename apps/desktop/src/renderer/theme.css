@@ -1360,6 +1360,42 @@ tbody tr:last-child td {
   padding: 0;
   margin-bottom: 18px;
 }
+.shift-time-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.shift-time-card {
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.shift-time-card legend {
+  padding: 0 5px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.shift-time-card > span,
+.shift-time-card > small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.shift-time-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.shift-time-inputs label {
+  min-width: 0;
+}
+.shift-time-inputs .ui-input {
+  width: 100%;
+}
 .settings-row {
   padding: 18px 0;
   border-color: var(--border);

@@ -18,6 +18,7 @@ import type { UpdateService } from "./services/update-service";
 import { IPC_CHANNELS } from "../shared/ipc-channels";
 import { OccurrenceService } from "./services/occurrence-service";
 import { ImportPreviewService } from "./services/import-preview-service";
+import { writeScheduleImportTemplate } from "./services/schedule-template";
 
 export interface ServiceContext {
   beforeInstall?: () => Promise<boolean>;
@@ -42,6 +43,16 @@ const isoDate = z.iso.date();
 const optionalIsoDateTime = z.string().datetime({ offset: true }).optional();
 const kind = z.enum(["desk", "maintenance", "weekend", "overtime", "all"]);
 const time = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+const shiftTimeRange = z.object({ startTime: time, endTime: time });
+const shiftTimeSettings = z.object({
+  weekdayDesk1: shiftTimeRange,
+  weekdayDesk2: shiftTimeRange,
+  weekdayDesk3: shiftTimeRange,
+  weekdayDesk4: shiftTimeRange,
+  maintenance: shiftTimeRange,
+  weekendMorning: shiftTimeRange,
+  weekendAfternoon: shiftTimeRange,
+});
 
 const scoreSchema = z.object({
   attendance: z.number().min(0).max(30).nullable(),
@@ -498,7 +509,6 @@ export function registerIpcHandlers(context: ServiceContext): void {
       parsedKind === "schedule"
         ? "网络服务小组排班导入模板.xlsx"
         : "网络中心员工信息表格.xlsx";
-    const sourcePath = join(context.templateDirectory, fileName);
     const result = await dialog.showSaveDialog({
       title:
         parsedKind === "schedule" ? "保存排班导入模板" : "保存人员信息模板",
@@ -506,8 +516,16 @@ export function registerIpcHandlers(context: ServiceContext): void {
       filters: [{ name: "Excel 工作簿", extensions: ["xlsx"] }],
     });
     if (result.canceled || !result.filePath) return null;
-    if (resolve(sourcePath) !== resolve(result.filePath))
-      await copyFile(sourcePath, result.filePath);
+    if (parsedKind === "schedule")
+      await writeScheduleImportTemplate(
+        result.filePath,
+        context.settings.getShiftTimeSettings(),
+      );
+    else {
+      const sourcePath = join(context.templateDirectory, fileName);
+      if (resolve(sourcePath) !== resolve(result.filePath))
+        await copyFile(sourcePath, result.filePath);
+    }
     return result.filePath;
   });
   invoke(IPC_CHANNELS.importMembers, async () => {
@@ -549,6 +567,12 @@ export function registerIpcHandlers(context: ServiceContext): void {
         })
         .parse(settings),
     ),
+  );
+  invoke(IPC_CHANNELS.shiftTimeSettings, async () =>
+    context.settings.getShiftTimeSettings(),
+  );
+  invoke(IPC_CHANNELS.updateShiftTimeSettings, async (settings) =>
+    context.settings.updateShiftTimeSettings(shiftTimeSettings.parse(settings)),
   );
   invoke(IPC_CHANNELS.updateMode, async () => context.updates.mode());
   invoke(IPC_CHANNELS.setUpdateMode, async (mode) =>

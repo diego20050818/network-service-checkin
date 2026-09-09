@@ -82,6 +82,10 @@ const api: CheckinApi = {
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.settings),
   updateSettings: (settings) =>
     ipcRenderer.invoke(IPC_CHANNELS.updateSettings, settings),
+  getShiftTimeSettings: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.shiftTimeSettings),
+  updateShiftTimeSettings: (settings) =>
+    ipcRenderer.invoke(IPC_CHANNELS.updateShiftTimeSettings, settings),
   getUpdateSettings: () => ipcRenderer.invoke(IPC_CHANNELS.updateMode),
   setUpdateMode: (mode) => ipcRenderer.invoke(IPC_CHANNELS.setUpdateMode, mode),
   getUpdateState: () => ipcRenderer.invoke(IPC_CHANNELS.updateState),
