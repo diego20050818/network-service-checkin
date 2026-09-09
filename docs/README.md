@@ -1,5 +1,7 @@
 # 文档索引
 
+- [v0.6.3 发布验证报告](v0.6.3-release-validation.md)：响应式、班次时段、提醒、候选包及发布证据
+- [v0.6.3 Release Notes](v0.6.3-release-notes.md)：GitHub Release 页面说明
 - [v0.6.0 升级验证报告](v0.6.0-upgrade-validation.md)：候选交付、兼容性证据、截图和稳定发布条件
 - [v0.6.0 交互与数据边界](decisions/ADR-003-v060-ui-reliability.md)：单次计划、考勤恢复、草稿及导入版本契约
 

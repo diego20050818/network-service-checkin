@@ -1341,7 +1341,6 @@ tbody tr:last-child td {
 @keyframes calendar-event-enter {
   from {
     opacity: 0;
-    transform: translateY(5px);
   }
 }
 .full-calendar .occurrence-event.maintenance {

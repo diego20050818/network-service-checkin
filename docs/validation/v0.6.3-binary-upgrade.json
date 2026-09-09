@@ -1,0 +1,103 @@
+{
+  "oldVersion": "0.5.1",
+  "newVersion": "0.6.3",
+  "before": {
+    "members": [
+      {
+        "id": "5f0bb83a-014d-45c6-a14a-6e2a14a86929",
+        "name": "旧版验收成员",
+        "college": "",
+        "role": "",
+        "phone": "",
+        "student_id": "00001234",
+        "major": "",
+        "grade": "",
+        "employee_no": "",
+        "active": 1,
+        "created_at": "2026-09-09T02:22:58.464Z",
+        "updated_at": "2026-09-09T02:22:58.464Z"
+      }
+    ],
+    "shifts": [
+      {
+        "id": "1367a90a-f245-42f3-90fb-d984b2630699",
+        "schedule_import_id": "38130711-ac19-49b0-8898-110efcffff3a",
+        "date": "2026-09-01",
+        "kind": "desk",
+        "label": "加班",
+        "start_time": "09:07",
+        "end_time": "10:22",
+        "paid_minutes": 75,
+        "required_slots": 1,
+        "attendance_mode": "lenient",
+        "late_threshold_minutes": 0,
+        "active": 1,
+        "created_at": "2026-09-09T02:22:58.468Z",
+        "work_type": "overtime",
+        "note": ""
+      }
+    ],
+    "shift_slots": [
+      {
+        "id": "58b157ce-df65-4442-8035-73ad76b22f19",
+        "shift_id": "1367a90a-f245-42f3-90fb-d984b2630699",
+        "position": 1,
+        "scheduled_member_id": "5f0bb83a-014d-45c6-a14a-6e2a14a86929",
+        "is_vacant": 0,
+        "slot_role": "overtime",
+        "slot_source": "manual",
+        "slot_note": ""
+      }
+    ],
+    "attendance_records": [
+      {
+        "id": "a847d5a5-0f2d-4a3e-ae3f-61a48e1e20b3",
+        "shift_id": "1367a90a-f245-42f3-90fb-d984b2630699",
+        "shift_slot_id": "58b157ce-df65-4442-8035-73ad76b22f19",
+        "actual_member_id": "5f0bb83a-014d-45c6-a14a-6e2a14a86929",
+        "punch_time": null,
+        "entered_at": "2026-09-09T02:22:58.471Z",
+        "paid_minutes": 75,
+        "late_status": "manual_unjudged",
+        "source": "manual",
+        "status": "active",
+        "attendance_mode": "lenient",
+        "late_threshold_minutes": 0,
+        "created_at": "2026-09-09T02:22:58.471Z",
+        "updated_at": "2026-09-09T02:22:58.471Z"
+      }
+    ],
+    "report_drafts": [
+      {
+        "id": "c8d26e23-9f01-4290-9421-2c5df0d50ab2",
+        "year": 2026,
+        "month": 9,
+        "payload_json": "{\"year\":2026,\"month\":9,\"fillDate\":\"2026-09-25\",\"startDate\":\"2026-08-26\",\"endDate\":\"2026-09-25\",\"filler\":\"\",\"department\":\"网络中心服务小组\",\"outputDirectory\":\"C:\\\\Users\\\\diego\\\\AppData\\\\Local\\\\Temp\\\\checkin-binary-upgrade-d9KOm1\\\\data\\\\exports\",\"workItems\":[\"\",\"\",\"\"],\"questions\":[\"\",\"\",\"\"],\"reflections\":[\"\",\"\",\"\"],\"plans\":[\"\",\"\",\"\"],\"advice\":\"旧安装包生成的草稿\",\"scores\":{},\"recommendations\":[{\"memberId\":null,\"reason\":\"\"},{\"memberId\":null,\"reason\":\"\"}],\"wageWorkloads\":{},\"wageNotes\":{},\"selectedFiles\":[\"workReport\",\"performance\",\"timeRecord\",\"schedule\",\"wageAssessment\"]}",
+        "updated_at": "2026-09-09T02:22:58.517Z"
+      }
+    ]
+  },
+  "backupManifest": {
+    "version": 2,
+    "kind": "manual",
+    "purpose": "pre_upgrade",
+    "schemaVersion": 3,
+    "targetSchemaVersion": 4,
+    "createdAt": "2026-09-09T02:22:59.601Z",
+    "databaseFile": "app.sqlite3",
+    "databaseSha256": "3d4ebf9fb6e45976c2f842f8caf2a160430eb8233bff893bec2c93784ffb219e",
+    "files": {
+      "app.sqlite3": "3d4ebf9fb6e45976c2f842f8caf2a160430eb8233bff893bec2c93784ffb219e",
+      "templates/[mouth]月工作报表-网络中心-[name].docx": "18c2c1db5076d3bffdcbc79b8dc6dcf17f637602ffef6417a2cb8bf90ff494ea",
+      "templates/[mouth]月绩效考核表网络中心[name][yyyymmdd].docx": "9aff21f4d1325429cd777eada2474db491684e84da06cb09c68d44664ce076a8",
+      "templates/[name]_[mouth]月工时自填表格.xlsx": "a70fc61d494361ac20b910c2acc7c87cb80d544162fd0bbe0d0708538e1bba57",
+      "templates/网络服务小组排班导入模板.xlsx": "5271376e64df7f6fc557ac75caca9663c0cc71f1d306f500b649a115f76a7567",
+      "templates/网络中心[mouth]月工时记录表.xlsx": "0939bb517ddb0a26903874d1a9e152ad55dcf9b2e170a2694f9ca2fa37a560cd",
+      "templates/网络中心[mouth]月排班表.docx": "7a3edbb7bd5d6af001506a609355a1f7b48a19ac06c0ade35f9f5c3701c927ef",
+      "templates/网络中心员工信息表格.xlsx": "7ad8e584d1bb2a642058027e4e5c7a9dacb67ce449824d490750218d5c499e65",
+      "templates/网络中心月工资考核表 --[mouth]月 .docx": "b00afdefed621ee0bc20a06357e3923281f40b6f8b9b145faa34a658e99cb2fc"
+    }
+  },
+  "allOriginalColumnsEqual": true,
+  "installerExecution": false
+}

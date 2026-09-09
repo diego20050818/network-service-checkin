@@ -44,7 +44,7 @@ test.afterEach(async ({}, info) => {
   }
 });
 async function launchFixture() {
-  const directory = await mkdtemp(join(tmpdir(), "checkin-v060-e2e-"));
+  const directory = await mkdtemp(join(tmpdir(), "checkin-v063-e2e-"));
   const data = join(directory, "data");
   await mkdir(data, { recursive: true });
   const store = new DatabaseStore(join(data, "app.sqlite3"));
@@ -380,9 +380,11 @@ test("写入成功但刷新失败不会报告写入失败或重写", async () =>
 
 test("关键页面在指定分辨率和缩放下留档", async () => {
   const { page, app } = await launchFixture();
-  const directory = resolve(__dirname, "screenshots", "v0.6.0");
+  const directory = resolve(__dirname, "screenshots", "v0.6.3");
   await mkdir(directory, { recursive: true });
   for (const [width, height, scale] of [
+    [760, 540, 1],
+    [950, 700, 1],
     [1366, 768, 1],
     [1920, 1080, 1],
     [1366, 768, 1.25],
@@ -883,11 +885,11 @@ test("0.5.1 二进制产生的真实 v3 数据由候选二进制备份并升级"
   );
   const candidateExe = resolve(
     __dirname,
-    "../../apps/desktop/release/candidate-0.6.0/win-unpacked/网络服务小组签到与月报.exe",
+    "../../apps/desktop/release/candidate-0.6.3/win-unpacked/网络服务小组签到与月报.exe",
   );
   test.skip(
     !existsSync(oldExe) || !existsSync(candidateExe),
-    "先保留 0.5.1 解包目录并构建 0.6.0 候选包",
+    "先保留 0.5.1 解包目录并构建 0.6.3 候选包",
   );
   const directory = await mkdtemp(join(tmpdir(), "checkin-binary-upgrade-"));
   const env = { ...process.env, NODE_ENV: "test" };
@@ -956,7 +958,7 @@ test("0.5.1 二进制产生的真实 v3 数据由候选二进制备份并升级"
       version: app.getVersion(),
       packaged: app.isPackaged,
     })),
-  ).toEqual({ version: "0.6.0", packaged: true });
+  ).toEqual({ version: "0.6.3", packaged: true });
   await expect(
     page.getByRole("heading", { name: "今日签到", exact: true }),
   ).toBeVisible();
@@ -967,7 +969,7 @@ test("0.5.1 二进制产生的真实 v3 数据由候选二进制备份并升级"
   ).toBe("undefined");
   await nav(page, "设置");
   const updates = await page.evaluate(() => window.checkinApi.getUpdateState());
-  expect(updates.currentVersion).toBe("0.6.0");
+  expect(updates.currentVersion).toBe("0.6.3");
   expect(updates.supported).toBe(true);
   const probe = new DatabaseSync(database, { readOnly: true });
   try {
@@ -1002,7 +1004,7 @@ test("0.5.1 二进制产生的真实 v3 数据由候选二进制备份并升级"
     JSON.stringify(
       {
         oldVersion: "0.5.1",
-        newVersion: "0.6.0",
+        newVersion: "0.6.3",
         before,
         backupManifest: manifest,
         allOriginalColumnsEqual: true,

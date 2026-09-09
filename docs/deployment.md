@@ -21,7 +21,11 @@ npm.cmd run package:win
 
 ## 升级
 
-### 0.6.0 稳定版
+### 0.6.3 稳定版
+
+发布构建位于 `apps/desktop/release/candidate-0.6.3/`，正式文件由 GitHub Release v0.6.3 提供。应用标识、userData 目录、数据库 schema v4 和 GitHub 稳定更新通道保持不变；v0.6.0 可直接向前更新。班次时段配置和提醒去重状态写入既有 `settings` 表，不要求数据库迁移。具体验证范围见 [v0.6.3 发布验证报告](v0.6.3-release-validation.md)。
+
+### 0.6.0 历史稳定版
 
 发布构建在本地位于 `apps/desktop/release/candidate-0.6.0/`，正式文件由 GitHub Release v0.6.0 提供。应用标识和 userData 目录不变。0.5.x 可由原更新器升级；0.4.0 可直接手动覆盖安装 0.6.0。
 
