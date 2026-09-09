@@ -645,6 +645,32 @@ test("签到倒计时、折叠状态标记和全窗口超时提醒可用", async
   ).toBeVisible();
 });
 
+test("页面与细节动效使用统一短时长并支持减少动态效果", async () => {
+  const { page } = await launchFixture();
+  await nav(page, "日历排班");
+  await expect(page.locator(".occurrence-event").first()).toBeAttached();
+  expect(
+    await page.locator(".page-transition").evaluate((element) => ({
+      name: getComputedStyle(element).animationName,
+      duration: getComputedStyle(element).animationDuration,
+    })),
+  ).toEqual({ name: "page-enter", duration: "0.19s" });
+  expect(
+    await page.locator(".occurrence-event").first().evaluate((element) =>
+      getComputedStyle(element).animationDuration,
+    ),
+  ).toBe("0.22s");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await nav(page, "设置");
+  expect(
+    await page.locator(".page-transition").evaluate((element) => ({
+      animation: getComputedStyle(element).animationName,
+      transition: getComputedStyle(element).transitionDuration,
+    })),
+  ).toEqual({ animation: "none", transition: "0s" });
+});
+
 test("草稿写入失败可以取消离开，保留输入并重试", async () => {
   const { app, page } = await launchFixture();
   await nav(page, "月度导出");

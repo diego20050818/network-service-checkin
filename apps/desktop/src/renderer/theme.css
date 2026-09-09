@@ -20,6 +20,10 @@
   --amber: #936018;
   --amber-soft: #fbf3e1;
   --shadow: none;
+  --motion-fast: 160ms;
+  --motion-standard: 190ms;
+  --motion-slow: 220ms;
+  --motion-ease: cubic-bezier(0.2, 0.75, 0.25, 1);
   color: var(--text);
   background: var(--background);
   font-size: 14px;
@@ -177,11 +181,30 @@ button:disabled {
   min-height: 46px;
   color: #57544f;
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transition:
+    color var(--motion-fast) var(--motion-ease),
+    background var(--motion-fast) var(--motion-ease);
+}
+.app-sidebar nav .ui-button::before {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary);
+  content: "";
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--motion-standard) var(--motion-ease);
 }
 .app-sidebar nav .active {
   background: var(--primary-soft) !important;
   color: var(--primary) !important;
   font-weight: 650;
+}
+.app-sidebar nav .active::before {
+  transform: scaleY(1);
 }
 .nav-icon {
   font-family: "Segoe UI Symbol", sans-serif;
@@ -229,6 +252,21 @@ button:disabled {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.page-transition {
+  width: 100%;
+  min-width: 0;
+  animation: page-enter var(--motion-standard) var(--motion-ease) both;
+}
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .workspace-header {
   height: 60px;
@@ -657,6 +695,7 @@ button:disabled {
   justify-content: center;
   padding: 24px;
   backdrop-filter: blur(1px);
+  animation: overlay-enter var(--motion-fast) ease-out both;
 }
 .ui-modal {
   background: var(--background);
@@ -667,6 +706,22 @@ button:disabled {
   max-height: calc(100dvh - 48px);
   overflow: auto;
   padding: 24px;
+  animation: modal-enter var(--motion-slow) var(--motion-ease) both;
+}
+@keyframes overlay-enter {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 .ui-modal .react-aria-Dialog {
   outline: none;
@@ -727,6 +782,17 @@ button:disabled {
   box-shadow: 0 6px 32px #241d1826;
   padding: 10px 14px 10px 18px;
   max-width: calc(100vw - 36px);
+  animation: toast-enter var(--motion-slow) var(--motion-ease) both;
+}
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 .ui-toast > span {
   font-size: 13px;
@@ -1042,6 +1108,13 @@ tbody tr:last-child td {
 }
 .attendance-people {
   margin-top: 18px;
+  animation: agenda-expand var(--motion-standard) var(--motion-ease) both;
+}
+@keyframes agenda-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
 }
 .attendance-person {
   display: grid;
@@ -1067,6 +1140,9 @@ tbody tr:last-child td {
 }
 .attendance-person > span {
   font-size: 12px;
+}
+.person-status {
+  transition: color var(--motion-fast) ease-out;
 }
 .signed-mark {
   color: var(--green);
@@ -1256,6 +1332,17 @@ tbody tr:last-child td {
   font-size: 11px;
   border-radius: 3px;
   overflow: hidden;
+  animation: calendar-event-enter var(--motion-slow) var(--motion-ease) both;
+  transition:
+    background var(--motion-standard) ease-out,
+    color var(--motion-standard) ease-out,
+    opacity var(--motion-standard) ease-out;
+}
+@keyframes calendar-event-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
 }
 .full-calendar .occurrence-event.maintenance {
   --fc-monarch-event: #4f6079;

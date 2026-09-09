@@ -262,7 +262,7 @@ function Workspace() {
               <div className="page-loading">正在读取本地数据…</div>
             )}
             {data && (
-              <>
+              <div className="page-transition" key={page}>
                 {page === "checkin" && (
                   <CheckInPage
                     data={data}
@@ -331,7 +331,7 @@ function Workspace() {
                 {page === "settings" && (
                   <SettingsPage data={data} onChanged={refresh} />
                 )}
-              </>
+              </div>
             )}
           </main>
         </div>
