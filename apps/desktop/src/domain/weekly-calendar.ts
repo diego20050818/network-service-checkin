@@ -1,7 +1,11 @@
 import type { ShiftSlotView, ShiftView } from "../shared/contracts";
-import { formatLocalDate, formatLocalDateTimeKey, parseTimeToMinutes } from "./time";
+import { formatLocalDate, parseTimeToMinutes } from "./time";
+import {
+  attendanceSlotVisualState,
+  type AttendanceSlotVisualState,
+} from "./attendance-visual";
 
-export type WeeklySlotState = "arrived" | "absent" | "upcoming" | "leave";
+export type WeeklySlotState = AttendanceSlotVisualState;
 
 export interface PositionedShift {
   shift: ShiftView;
@@ -17,9 +21,7 @@ export function mondayOfWeek(date: Date): string {
 }
 
 export function weeklySlotState(shift: ShiftView, slot: ShiftSlotView, now: Date): WeeklySlotState {
-  if (slot.attendanceId) return "arrived";
-  if (slot.leave && !slot.leave.replacementMemberId) return "leave";
-  return `${shift.date}T${shift.startTime}` <= formatLocalDateTimeKey(now) ? "absent" : "upcoming";
+  return attendanceSlotVisualState(shift, slot, now);
 }
 
 export function layoutOverlappingShifts(shifts: ShiftView[]): PositionedShift[] {

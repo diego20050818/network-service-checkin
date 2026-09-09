@@ -6,6 +6,7 @@ import type {
   Member,
   OccurrenceView,
   ShiftSlotView,
+  ShiftView,
 } from "../../shared/contracts";
 import {
   formatLocalDate,
@@ -24,6 +25,29 @@ import { EmptyState } from "../components";
 import { useCommand } from "../data/commands";
 import { errorMessage } from "../App";
 import { ManualEntry, RecordDetail } from "./RecordsPage";
+import {
+  ATTENDANCE_STATE_LABEL,
+  ATTENDANCE_STATE_MARK,
+  attendanceShiftPhase,
+  attendancePersonLabel,
+  attendanceSlotVisualState,
+  selectAttendanceAgendaTarget,
+} from "../../domain/attendance-visual";
+
+function phaseFor(shift: ShiftView, now: Date) {
+  return attendanceShiftPhase(shift, now);
+}
+
+function countdownTo(endTime: string, now: Date): string {
+  const [hour, minute] = endTime.split(":").map(Number);
+  const end = new Date(now);
+  end.setHours(hour!, minute!, 0, 0);
+  const seconds = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / 1000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 export function CheckInPage({
   data,
@@ -42,6 +66,8 @@ export function CheckInPage({
   const [error, setError] = useState("");
   const date = formatLocalDate(now);
   const token = useRef(0);
+  const agendaElements = useRef(new Map<string, HTMLElement>());
+  const locatedDate = useRef("");
   const load = useCallback(async () => {
     const request = ++token.current;
     try {
@@ -73,6 +99,18 @@ export function CheckInPage({
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+  useEffect(() => {
+    if (!shifts.length || locatedDate.current === date) return;
+    const target = selectAttendanceAgendaTarget(shifts, now);
+    if (!target) return;
+    locatedDate.current = date;
+    const frame = window.requestAnimationFrame(() =>
+      agendaElements.current
+        .get(target.id)
+        ?.scrollIntoView({ block: "center", behavior: "auto" }),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [date, shifts]);
   const refresh = useCallback(async () => {
     await Promise.all([load(), onChanged()]);
   }, [load, onChanged]);
@@ -118,6 +156,10 @@ export function CheckInPage({
               records={records.filter((r) => r.shiftId === shift.id)}
               now={now}
               refresh={refresh}
+              elementRef={(element) => {
+                if (element) agendaElements.current.set(shift.id, element);
+                else agendaElements.current.delete(shift.id);
+              }}
             />
           ))}
         </section>
@@ -144,20 +186,16 @@ function ShiftAgenda({
   records,
   now,
   refresh,
+  elementRef,
 }: {
   shift: OccurrenceView;
   members: Member[];
   records: AttendanceRecordView[];
   now: Date;
   refresh(): Promise<void>;
+  elementRef(element: HTMLElement | null): void;
 }) {
-  const time = formatLocalTime(now);
-  const phase =
-    time < shift.startTime
-      ? "upcoming"
-      : time < shift.endTime
-        ? "current"
-        : "ended";
+  const phase = phaseFor(shift, now);
   const [open, setOpen] = useState(phase === "current");
   const [selection, setSelection] = useState<
     Record<string, { enabled: boolean; memberId: string; baseline: string }>
@@ -253,7 +291,7 @@ function ShiftAgenda({
       await action({ type: "removeStaff", slotId: slot.id }, "临时席位已移除");
   }
   return (
-    <section className={`agenda-row ${phase}`}>
+    <section className={`agenda-row ${phase}`} ref={elementRef}>
       <div className="agenda-time">
         <strong>{shift.startTime}</strong>
         <span>{shift.endTime}</span>
@@ -279,14 +317,36 @@ function ShiftAgenda({
                     : "已结束"}
             </span>
           </AppButton>
-          <span>
-            {signed} 已签到{exempt > 0 ? ` · ${exempt} 请假` : ""} /{" "}
-            {shift.slots.length} 人
-          </span>
+          <div className="agenda-meta">
+            <span>
+              {signed} 已签到{exempt > 0 ? ` · ${exempt} 请假` : ""} /{" "}
+              {shift.slots.length} 人
+            </span>
+            {phase === "current" && (
+              <span className="shift-countdown" aria-label="距离当前班结束">
+                <strong>{countdownTo(shift.endTime, now)}</strong>
+                <span>距离结束</span>
+              </span>
+            )}
+          </div>
         </div>
         {!open && (
-          <p className="agenda-summary">
-            {shift.slots.map((s) => s.scheduledMemberName ?? "空位").join("、")}
+          <div className="agenda-summary">
+            <div className="collapsed-attendance" aria-label="折叠签到状态">
+              {shift.slots.map((slot) => {
+                const state = attendanceSlotVisualState(shift, slot, now);
+                return (
+                  <span
+                    className={state}
+                    key={slot.id}
+                    title={ATTENDANCE_STATE_LABEL[state]}
+                  >
+                    <b aria-hidden="true">{ATTENDANCE_STATE_MARK[state]}</b>{" "}
+                    {attendancePersonLabel(slot)}
+                  </span>
+                );
+              })}
+            </div>
             <AppButton
               variant="quiet"
               size="compact"
@@ -294,7 +354,7 @@ function ShiftAgenda({
             >
               展开查看
             </AppButton>
-          </p>
+          </div>
         )}
         {open && (
           <>
@@ -316,7 +376,10 @@ function ShiftAgenda({
                     key={slot.id}
                   >
                     {already ? (
-                      <span className="signed-mark" aria-label="已签到">
+                      <span
+                        className="signed-mark attendance-check-pop"
+                        aria-label="已签到"
+                      >
                         ✓
                       </span>
                     ) : exempt ? (

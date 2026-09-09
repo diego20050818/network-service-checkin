@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { addDays, formatLocalDate, parseTimeToMinutes } from "../../domain/time";
 import { layoutOverlappingShifts, mondayOfWeek, weeklySlotState, type WeeklySlotState } from "../../domain/weekly-calendar";
+import {
+  ATTENDANCE_STATE_MARK,
+  attendancePersonLabel,
+  attendanceShiftVisualState,
+} from "../../domain/attendance-visual";
 import type { ShiftFilter, ShiftSlotView, ShiftView } from "../../shared/contracts";
 import { errorMessage } from "../App";
 
 const DAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const STATE_LABELS: Record<WeeklySlotState, string> = { arrived: "到岗", absent: "未到岗", upcoming: "未到班", leave: "请假豁免" };
+const STATE_LABELS: Record<WeeklySlotState, string> = { arrived: "已签到", absent: "未签到", upcoming: "待开始", leave: "请假" };
 const PIXELS_PER_MINUTE = 1;
 
 interface Props {
@@ -86,7 +91,7 @@ export function WeeklySchedule({ kind, memberId }: Props) {
           </div>
         </div>
         <div className="weekly-legend" aria-label="到岗状态图例">
-          <span><i className="arrived" />到岗</span><span><i className="absent" />未到岗</span><span><i className="upcoming" />未到班</span><span><i className="leave" />请假</span>
+          <span><i className="arrived" />已签到</span><span><i className="absent" />未签到</span><span><i className="upcoming" />未开始</span><span><i className="leave" />请假</span>
         </div>
       </div>
       {error && <div className="inline-error compact" role="alert">{error}</div>}
@@ -111,15 +116,14 @@ export function WeeklySchedule({ kind, memberId }: Props) {
                 )}
                 {positioned.map(({ shift, lane, laneCount }) => {
                   const slots = visibleSlots(shift, memberId);
-                  const states = slots.map((slot) => weeklySlotState(shift, slot, now));
-                  const uniformState = states.every((state) => state === states[0]) ? states[0] : "mixed";
+                  const visualState = attendanceShiftVisualState(shift, now);
                   const style: CSSProperties = {
                     top: (parseTimeToMinutes(shift.startTime) - startMinute) * PIXELS_PER_MINUTE + 2,
                     height: Math.max(58, (parseTimeToMinutes(shift.endTime) - parseTimeToMinutes(shift.startTime)) * PIXELS_PER_MINUTE - 4),
                     left: `calc(${(lane / laneCount) * 100}% + 3px)`,
                     width: `calc(${100 / laneCount}% - 6px)`,
                   };
-                  return <article className={`week-event ${uniformState} ${shift.workType}`} style={style} key={shift.id} title={`${shift.workType === "overtime" ? "加班" : shift.label} ${shift.startTime}-${shift.endTime}`}>
+                  return <article className={`week-event ${visualState} ${shift.workType}`} style={style} key={shift.id} title={`${shift.workType === "overtime" ? "加班" : shift.label} ${shift.startTime}-${shift.endTime}`}>
                     <strong>{shift.workType === "overtime" ? "加班" : shift.label}</strong><time>{shift.startTime}–{shift.endTime}</time>
                     <div className="week-event-people">{slots.map((slot) => <PersonState key={slot.id} shift={shift} slot={slot} now={now} />)}</div>
                   </article>;
@@ -137,17 +141,9 @@ export function WeeklySchedule({ kind, memberId }: Props) {
 
 function PersonState({ shift, slot, now }: { shift: ShiftView; slot: ShiftSlotView; now: Date }) {
   const state = weeklySlotState(shift, slot, now);
-  const scheduled = slot.scheduledMemberName ?? "空位";
-  const actual = slot.actualMemberName;
   const role = slot.role === "staff" ? "办公" : slot.role === "overtime" ? "加班" : "负责";
-  const name = slot.leave && !slot.leave.replacementMemberId
-    ? `${scheduled}（请假）`
-    : actual && actual !== scheduled
-      ? `${actual}（替 ${scheduled}）`
-      : slot.leave?.replacementMemberName
-        ? `${slot.leave.replacementMemberName}（代 ${scheduled}）`
-        : actual ?? scheduled;
-  return <span className={`week-person ${state}`} title={`${role} · ${name}：${STATE_LABELS[state]}`}>{role}·{name}</span>;
+  const name = attendancePersonLabel(slot);
+  return <span className={`week-person ${state}`} title={`${role} · ${name}：${STATE_LABELS[state]}`}>{ATTENDANCE_STATE_MARK[state]} {role}·{name}</span>;
 }
 
 function visibleSlots(shift: ShiftView, memberId: string): ShiftSlotView[] {

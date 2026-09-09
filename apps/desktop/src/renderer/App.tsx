@@ -1,6 +1,7 @@
 import { BusinessDataContext } from "./data/invalidation";
 import { useCallback, useEffect, useState } from "react";
 import type {
+  AttendanceReminderPayload,
   BootstrapData,
   OperationEntry,
   RecordFilters,
@@ -37,6 +38,31 @@ const navigation: Array<{ key: Page; label: string; icon: string }> = [
   { key: "data", label: "成员与排班源", icon: "♧" },
   { key: "settings", label: "设置", icon: "⚙" },
 ];
+
+function playReminderTone(): void {
+  try {
+    const context = new AudioContext();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.62);
+    gain.connect(context.destination);
+    for (const [frequency, offset] of [
+      [660, 0],
+      [880, 0.2],
+    ] as const) {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + offset);
+      oscillator.stop(context.currentTime + offset + 0.24);
+    }
+    window.setTimeout(() => void context.close(), 800);
+  } catch {
+    // 音频设备不可用时仍保留视觉和系统提醒。
+  }
+}
 export function App() {
   return (
     <UiProvider>
@@ -59,6 +85,8 @@ function Workspace() {
   }, []);
   const [filters, setFilters] = useState<RecordFilters>({});
   const [history, setHistory] = useState<OperationEntry[] | null>(null);
+  const [attendanceReminder, setAttendanceReminder] =
+    useState<AttendanceReminderPayload | null>(null);
   const { notify, confirm } = useFeedback();
   const refresh = useCallback(async () => {
     try {
@@ -94,6 +122,31 @@ function Workspace() {
     }
   }, [confirm]);
   useEffect(() => window.checkinApi.onCloseRequested(canLeave), [canLeave]);
+  useEffect(
+    () =>
+      window.checkinApi.onAttendanceReminder((payload) => {
+        setAttendanceReminder((current) => {
+          if (!current) return payload;
+          const shifts = new Map(
+            [...current.shifts, ...payload.shifts].map((shift) => [
+              shift.id,
+              shift,
+            ]),
+          );
+          const values = [...shifts.values()];
+          return {
+            triggeredAt: payload.triggeredAt,
+            shifts: values,
+            totalPending: values.reduce(
+              (count, shift) => count + shift.pendingNames.length,
+              0,
+            ),
+          };
+        });
+        playReminderTone();
+      }),
+    [],
+  );
   async function navigate(next: Page, context?: RecordFilters) {
     if (!(await canLeave())) return;
     if (context) setFilters(context);
@@ -282,6 +335,52 @@ function Workspace() {
             )}
           </main>
         </div>
+        {attendanceReminder && (
+          <div
+            className="attendance-reminder-overlay"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="attendance-reminder-title"
+          >
+            <div className="attendance-reminder-rings" aria-hidden="true" />
+            <section className="attendance-reminder-card">
+              <span className="attendance-reminder-icon" aria-hidden="true">
+                !
+              </span>
+              <div>
+                <p>开班已满 15 分钟</p>
+                <h2 id="attendance-reminder-title">
+                  {attendanceReminder.totalPending} 人尚未签到
+                </h2>
+                <div className="attendance-reminder-shifts">
+                  {attendanceReminder.shifts.map((shift) => (
+                    <p key={shift.id}>
+                      <strong>{shift.label}</strong>
+                      <span>
+                        {shift.startTime}–{shift.endTime} ·{" "}
+                        {shift.pendingNames.join("、")}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              </div>
+              <div className="button-row">
+                <AppButton
+                  variant="primary"
+                  onClick={() => {
+                    setAttendanceReminder(null);
+                    void navigate("checkin");
+                  }}
+                >
+                  去签到
+                </AppButton>
+                <AppButton onClick={() => setAttendanceReminder(null)}>
+                  关闭提醒
+                </AppButton>
+              </div>
+            </section>
+          </div>
+        )}
         <AppDialog
           open={history !== null}
           title="最近操作"

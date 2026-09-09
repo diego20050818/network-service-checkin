@@ -586,6 +586,65 @@ test("设置页可修改 7 条班次时段并持久化自动工时", async () =>
   ).toContainText("9:15");
 });
 
+test("签到倒计时、折叠状态标记和全窗口超时提醒可用", async () => {
+  const { page, app, current, future, today } = await launchFixture();
+  const row = page.locator(".agenda-row.current").first();
+  await expect(row.getByLabel("距离当前班结束", { exact: true })).toBeVisible();
+  await row
+    .getByRole("checkbox", { name: "选择 林清 签到", exact: true })
+    .press("Space");
+  await row
+    .getByRole("button", { name: "为所选 1 人签到", exact: true })
+    .click();
+  await expect(row.locator(".attendance-check-pop")).toHaveCount(1);
+  await row.locator(".agenda-toggle").click();
+  const collapsed = row.getByLabel("折叠签到状态", { exact: true });
+  await expect(collapsed).toContainText("✓ 林清");
+  await expect(collapsed).toContainText("× 陈嘉");
+  await expect(collapsed).toContainText("× 周宁");
+
+  await nav(page, "日历排班");
+  await expect(
+    page.locator(`[data-occurrence-id="${current.shiftId}"]`),
+  ).toHaveClass(/attendance-attention/);
+  await expect(
+    page.locator(`[data-occurrence-id="${future.shiftId}"]`),
+  ).toHaveClass(/attendance-upcoming/);
+  await nav(page, "设置");
+  await app.evaluate(
+    ({ BrowserWindow }, input) =>
+      BrowserWindow.getAllWindows()[0]!.webContents.send(
+        input.channel,
+        input.payload,
+      ),
+    {
+      channel: IPC_CHANNELS.attendanceReminder,
+      payload: {
+        triggeredAt: new Date().toISOString(),
+        totalPending: 2,
+        shifts: [
+          {
+            id: current.shiftId,
+            date: today,
+            label: "维修班",
+            startTime: "00:00",
+            endTime: "23:59",
+            pendingNames: ["陈嘉", "周宁"],
+          },
+        ],
+      },
+    },
+  );
+  const reminder = page.getByRole("alertdialog");
+  await expect(reminder).toContainText("2 人尚未签到");
+  await expect(reminder).toContainText("陈嘉、周宁");
+  await reminder.getByRole("button", { name: "去签到", exact: true }).click();
+  await expect(reminder).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "今日签到", exact: true }),
+  ).toBeVisible();
+});
+
 test("草稿写入失败可以取消离开，保留输入并重试", async () => {
   const { app, page } = await launchFixture();
   await nav(page, "月度导出");

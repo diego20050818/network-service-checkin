@@ -956,6 +956,29 @@ tbody tr:last-child td {
   text-align: right;
   color: var(--muted);
 }
+.agenda-meta {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.agenda-meta .shift-countdown {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--primary);
+}
+.agenda-meta .shift-countdown strong {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.agenda-meta .shift-countdown span {
+  font-size: 10px;
+  color: var(--muted);
+}
 .agenda-toggle {
   padding: 0 !important;
   text-align: left;
@@ -992,6 +1015,31 @@ tbody tr:last-child td {
   justify-content: space-between;
   gap: 12px;
 }
+.collapsed-attendance {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+}
+.collapsed-attendance > span {
+  overflow-wrap: anywhere;
+}
+.collapsed-attendance b {
+  font-size: 15px;
+}
+.collapsed-attendance .arrived {
+  color: var(--green);
+}
+.collapsed-attendance .absent {
+  color: var(--red);
+}
+.collapsed-attendance .leave {
+  color: var(--amber);
+}
+.collapsed-attendance .upcoming {
+  color: var(--muted);
+}
 .attendance-people {
   margin-top: 18px;
 }
@@ -1023,6 +1071,22 @@ tbody tr:last-child td {
 .signed-mark {
   color: var(--green);
   font-size: 18px !important;
+}
+@keyframes attendance-check-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-18deg);
+  }
+  70% {
+    transform: scale(1.18) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+.attendance-check-pop {
+  animation: attendance-check-pop 220ms ease-out both;
 }
 .exempt-mark {
   color: var(--muted);
@@ -1145,10 +1209,19 @@ tbody tr:last-child td {
   align-items: center;
   gap: 20px;
   font-size: 11px;
-  color: var(--primary);
-}
-.calendar-legend span:nth-child(n + 4) {
   color: var(--muted);
+}
+.calendar-legend .attendance-complete {
+  color: var(--green);
+}
+.calendar-legend .attendance-attention {
+  color: var(--red);
+}
+.calendar-legend .attendance-upcoming {
+  color: var(--muted);
+}
+.calendar-legend .attendance-leave {
+  color: var(--amber);
 }
 .calendar-legend span:last-child {
   margin-left: auto;
@@ -1194,8 +1267,158 @@ tbody tr:last-child td {
   color: white;
   background: #8a683c;
 }
+.full-calendar .occurrence-event.attendance-complete {
+  --fc-monarch-event: var(--green);
+  color: white;
+  background: var(--green);
+}
+.full-calendar .occurrence-event.attendance-attention {
+  --fc-monarch-event: var(--red);
+  color: white;
+  background: var(--red);
+}
+.full-calendar .occurrence-event.attendance-upcoming {
+  --fc-monarch-event: #bdc1c6;
+  color: var(--text);
+  background: #bdc1c6;
+}
+.full-calendar .occurrence-event.attendance-leave {
+  --fc-monarch-event: #e3b04b;
+  color: #5f3b00;
+  background: #e3b04b;
+}
 .full-calendar .occurrence-event.locked {
   opacity: 0.78;
+}
+.week-event.complete {
+  background: var(--green);
+}
+.week-event.attention {
+  background: var(--red);
+}
+.week-event.upcoming {
+  color: var(--text);
+  background: #bdc1c6;
+}
+.week-event.leave {
+  color: #5f3b00;
+  background: #e3b04b;
+}
+.week-event.upcoming > time,
+.week-event.leave > time {
+  color: currentColor;
+  opacity: 0.78;
+}
+.week-event .week-person.arrived {
+  color: white;
+  background: #28734a !important;
+}
+.week-event .week-person.absent {
+  color: white;
+  background: #b23b35 !important;
+}
+.week-event .week-person.upcoming {
+  color: var(--text);
+  background: #d1d3d4 !important;
+}
+.week-event .week-person.leave {
+  color: #5f3b00;
+  background: #f1c66f !important;
+}
+.attendance-reminder-overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 28px;
+  background: rgba(35, 18, 14, 0.72);
+  backdrop-filter: blur(8px);
+}
+.attendance-reminder-rings,
+.attendance-reminder-rings::before,
+.attendance-reminder-rings::after {
+  position: absolute;
+  width: min(88vmax, 1050px);
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 225, 198, 0.28);
+  border-radius: 50%;
+  content: "";
+  animation: attendance-reminder-pulse 1.8s ease-out infinite;
+}
+.attendance-reminder-rings::before {
+  inset: 10%;
+  width: 80%;
+  animation-delay: 0.3s;
+}
+.attendance-reminder-rings::after {
+  inset: 20%;
+  width: 60%;
+  animation-delay: 0.6s;
+}
+@keyframes attendance-reminder-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.75);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+.attendance-reminder-card {
+  position: relative;
+  width: min(620px, 100%);
+  max-height: calc(100dvh - 56px);
+  overflow: auto;
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgba(20, 8, 5, 0.38);
+}
+.attendance-reminder-icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  color: white;
+  background: var(--red);
+  font-size: 28px;
+  font-weight: 700;
+}
+.attendance-reminder-card > div > p:first-child {
+  margin: 0 0 4px;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+.attendance-reminder-card h2 {
+  margin: 0;
+  font-size: 28px;
+}
+.attendance-reminder-shifts {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.attendance-reminder-shifts p {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.attendance-reminder-shifts span {
+  color: var(--muted);
+  text-align: right;
 }
 .report-save-line {
   display: flex;

@@ -1,4 +1,11 @@
-import { app, BrowserWindow, session, ipcMain, dialog } from "electron";
+import {
+  app,
+  BrowserWindow,
+  session,
+  ipcMain,
+  dialog,
+  Notification,
+} from "electron";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
@@ -21,9 +28,14 @@ import { StorageService } from "./services/storage-service";
 import { UpdateService } from "./services/update-service";
 import { IPC_CHANNELS } from "../shared/ipc-channels";
 import { prepareUpgrade } from "./upgrade";
+import {
+  AttendanceReminderService,
+  deliverAttendanceReminder,
+} from "./services/attendance-reminder-service";
 
 let mainWindow: BrowserWindow | null = null;
 let services: ServiceContext | null = null;
+let attendanceReminders: AttendanceReminderService | null = null;
 let closeAuthorized = false;
 let closeRequest: {
   id: string;
@@ -164,6 +176,7 @@ async function createWindow(): Promise<void> {
     if (!allowed && !url.startsWith("file://")) event.preventDefault();
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("focus", () => mainWindow?.flashFrame(false));
   if (process.env.VITE_DEV_SERVER_URL)
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   else await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
@@ -193,6 +206,34 @@ app
       .ensureDaily()
       .catch((error) => console.error("每日备份失败", error));
     await createWindow();
+    attendanceReminders = new AttendanceReminderService(
+      services.store,
+      services.attendance,
+      (payload) =>
+        deliverAttendanceReminder(payload, {
+          send: (value) =>
+            mainWindow?.webContents.send(IPC_CHANNELS.attendanceReminder, value),
+          isForeground: () =>
+            Boolean(
+              mainWindow?.isVisible() &&
+                !mainWindow.isMinimized() &&
+                mainWindow.isFocused(),
+            ),
+          showSystemNotification: (title, body, onClick) => {
+            const notification = new Notification({ title, body });
+            notification.once("click", onClick);
+            notification.show();
+          },
+          flashTaskbar: () => mainWindow?.flashFrame(true),
+          restoreWindow: () => {
+            if (!mainWindow) return;
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            if (!mainWindow.isVisible()) mainWindow.show();
+            mainWindow.focus();
+          },
+        }),
+    );
+    if (process.env.NODE_ENV !== "test") attendanceReminders.start();
     setTimeout(() => {
       void services?.updates.startAutomaticCheck();
     }, 3_000);
@@ -224,6 +265,8 @@ app.on("before-quit", (event) => {
     return;
   }
   removeIpcHandlers();
+  attendanceReminders?.stop();
+  attendanceReminders = null;
   services?.store.close();
   services = null;
 });

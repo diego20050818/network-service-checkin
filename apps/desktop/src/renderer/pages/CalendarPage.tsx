@@ -34,6 +34,12 @@ import {
 import { useCommand } from "../data/commands";
 import { registerNavigationGuard } from "../data/navigation";
 import { errorMessage } from "../App";
+import {
+  ATTENDANCE_STATE_MARK,
+  attendancePersonLabel,
+  attendanceShiftVisualState,
+  attendanceSlotVisualState,
+} from "../../domain/attendance-visual";
 
 const fromShift = (shift: OccurrenceView): OccurrenceInput => ({
   id: shift.id,
@@ -69,6 +75,7 @@ export function CalendarPage({
   const [view, setView] = useState("timeGridWeek");
   const [date, setDate] = useState(formatLocalDate(new Date()));
   const [shifts, setShifts] = useState<OccurrenceView[]>([]);
+  const [now, setNow] = useState(new Date());
   const [cancelled, setCancelled] = useState(false);
   const [detail, setDetail] = useState<OccurrenceView | null>(null);
   const [editor, setEditor] = useState<OccurrenceInput | null>(null);
@@ -84,7 +91,10 @@ export function CalendarPage({
             shift.label +
             " · " +
             shift.slots
-              .map((s) => s.scheduledMemberName ?? "待安排")
+              .map(
+                (slot) =>
+                  `${ATTENDANCE_STATE_MARK[attendanceSlotVisualState(shift, slot, now)]} ${attendancePersonLabel(slot)}`,
+              )
               .join("、") +
             " " +
             shift.date +
@@ -96,7 +106,11 @@ export function CalendarPage({
           el.setAttribute("aria-label", label);
         }
       });
-  }, [shifts]);
+  }, [shifts, now]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [height, setHeight] = useState(window.innerHeight);
   useEffect(() => {
     const resized = () => setHeight(window.innerHeight);
@@ -248,10 +262,11 @@ export function CalendarPage({
         </div>
       )}
       <div className="calendar-legend">
-        <span>● 坐班</span>
-        <span className="maintenance">● 维修</span>
-        <span className="overtime">● 加班</span>
-        <span>拖动吸附 15 分钟 · 表单可精确到分钟</span>
+        <span className="attendance-complete">● 全部处理</span>
+        <span className="attendance-attention">● 待签到</span>
+        <span className="attendance-upcoming">● 未开始</span>
+        <span className="attendance-leave">● 请假</span>
+        <span className="calendar-hint">拖动吸附 15 分钟 · 表单可精确到分钟</span>
         <span role="status">
           {loading
             ? "正在加载…"
@@ -296,19 +311,29 @@ export function CalendarPage({
           }}
           events={shifts
             .filter((s) => s.active)
-            .map((s) => ({
+            .map((s) => {
+              const visualState = attendanceShiftVisualState(s, now);
+              const people = s.slots
+                .map((slot) => {
+                  const state = attendanceSlotVisualState(s, slot, now);
+                  return `${ATTENDANCE_STATE_MARK[state]}${attendancePersonLabel(slot)}`;
+                })
+                .join("、");
+              return {
               id: s.id,
-              title: `${s.workType === "overtime" ? "加班" : s.label} · ${s.slots.map((p) => p.scheduledMemberName ?? "待安排").join("、")}`,
+              title: `${s.workType === "overtime" ? "加班" : s.label} · ${people}`,
               start: s.date + "T" + s.startTime,
               end: s.date + "T" + s.endTime,
               editable: s.editable && !command.pending,
               className: [
                 "occurrence-event",
                 s.workType === "overtime" ? "overtime" : s.kind,
+                `attendance-${visualState}`,
                 !s.editable ? "locked" : "",
               ].join(" "),
               extendedProps: { shift: s },
-            }))}
+              };
+            })}
           eventClick={(info) => {
             const shift = shifts.find((s) => s.id === info.event.id);
             if (shift) setDetail(shift);

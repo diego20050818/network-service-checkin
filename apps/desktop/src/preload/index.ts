@@ -101,6 +101,15 @@ const api: CheckinApi = {
     return () =>
       ipcRenderer.removeListener(IPC_CHANNELS.updateStateChanged, handler);
   },
+  onAttendanceReminder: (listener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: Parameters<typeof listener>[0],
+    ) => listener(payload);
+    ipcRenderer.on(IPC_CHANNELS.attendanceReminder, handler);
+    return () =>
+      ipcRenderer.removeListener(IPC_CHANNELS.attendanceReminder, handler);
+  },
   getStartupSettings: () => ipcRenderer.invoke(IPC_CHANNELS.startupSettings),
   setStartupEnabled: (enabled) =>
     ipcRenderer.invoke(IPC_CHANNELS.setStartupEnabled, enabled),

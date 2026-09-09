@@ -46,6 +46,7 @@ export const IPC_CHANNELS = {
   downloadUpdate: "updates:download",
   installUpdate: "updates:install",
   updateStateChanged: "updates:state-changed",
+  attendanceReminder: "attendance:reminder",
   startupSettings: "startup:get",
   setStartupEnabled: "startup:set-enabled",
   storageOverview: "storage:overview",

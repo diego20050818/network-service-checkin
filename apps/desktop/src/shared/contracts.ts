@@ -297,6 +297,19 @@ export interface ShiftTimeSettingsUpdateResult {
   updatedShiftCount: number;
 }
 
+export interface AttendanceReminderPayload {
+  triggeredAt: string;
+  totalPending: number;
+  shifts: Array<{
+    id: string;
+    date: string;
+    label: string;
+    startTime: string;
+    endTime: string;
+    pendingNames: string[];
+  }>;
+}
+
 export interface UpdateSettings {
   mode: UpdateMode;
 }
@@ -484,6 +497,9 @@ export interface CheckinApi {
   downloadUpdate(): Promise<UpdateState>;
   installUpdate(): Promise<void>;
   onUpdateStateChanged(listener: (state: UpdateState) => void): () => void;
+  onAttendanceReminder(
+    listener: (payload: AttendanceReminderPayload) => void,
+  ): () => void;
   getStartupSettings(): Promise<StartupSettings>;
   setStartupEnabled(enabled: boolean): Promise<StartupSettings>;
   getStorageOverview(): Promise<StorageOverview>;
