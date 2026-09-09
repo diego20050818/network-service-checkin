@@ -55,7 +55,7 @@ async function launchFixture() {
   const current = addShift(store, members, {
     importId,
     date: today,
-    kind: "desk",
+    kind: "maintenance",
     startTime: "00:00",
     endTime: "23:59",
     paidMinutes: 1439,
@@ -491,6 +491,63 @@ test("日历按分钟编辑、取消及恢复，重载后保留时间与原 ID",
   await page.locator(".calendar-toolbar .ui-select-trigger").click();
   await page.getByRole("option", { name: "日视图", exact: true }).click();
   await expect(page.locator(".full-calendar")).toBeVisible();
+});
+
+test("三人维修班多选在目标尺寸和缩放下填满工作区且不溢出", async () => {
+  const { page, app } = await launchFixture();
+  const row = page.locator(".agenda-row.current").first();
+  await expect(row.getByRole("heading", { name: "维修班" })).toBeVisible();
+  await row
+    .getByRole("button", { name: "选择全部待签到", exact: true })
+    .click();
+  await expect(
+    row.getByRole("button", { name: "为所选 3 人签到", exact: true }),
+  ).toBeEnabled();
+
+  for (const [width, height, zoom] of [
+    [760, 540, 1],
+    [950, 700, 1],
+    [1366, 768, 1],
+    [1920, 1080, 1],
+    [1366, 768, 1.25],
+    [1366, 768, 1.5],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await app.evaluate(
+      ({ BrowserWindow }, scale) =>
+        BrowserWindow.getAllWindows()[0]!.webContents.setZoomFactor(scale),
+      zoom,
+    );
+    await expect(row).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const root = document.documentElement;
+      const main = document.querySelector<HTMLElement>(".app-main")!;
+      const checkin = document.querySelector<HTMLElement>(".checkin-page")!;
+      const mainStyle = getComputedStyle(main);
+      const mainBox = main.getBoundingClientRect();
+      const pageBox = checkin.getBoundingClientRect();
+      const people = Array.from(
+        document.querySelectorAll<HTMLElement>(".attendance-person"),
+      );
+      return {
+        noHorizontalOverflow: root.scrollWidth <= root.clientWidth,
+        rightGap:
+          mainBox.left +
+          main.clientWidth -
+          Number.parseFloat(mainStyle.paddingRight) -
+          pageBox.right,
+        peopleInside:
+          people.length >= 3 &&
+          people.every((person) => {
+            const box = person.getBoundingClientRect();
+            return box.left >= pageBox.left - 1 && box.right <= pageBox.right + 1;
+          }),
+      };
+    });
+    expect(layout.noHorizontalOverflow).toBe(true);
+    expect(Math.abs(layout.rightGap)).toBeLessThanOrEqual(1);
+    expect(layout.peopleInside).toBe(true);
+  }
 });
 
 test("草稿写入失败可以取消离开，保留输入并重试", async () => {

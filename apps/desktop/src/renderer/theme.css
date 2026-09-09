@@ -904,7 +904,8 @@ tbody tr:last-child td {
   letter-spacing: -0.03em;
 }
 .checkin-page {
-  max-width: 1300px;
+  width: 100%;
+  max-width: none;
   margin: 0;
 }
 .day-agenda {
@@ -947,11 +948,12 @@ tbody tr:last-child td {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .agenda-heading > span {
   font-size: 12px;
-  white-space: nowrap;
+  text-align: right;
   color: var(--muted);
 }
 .agenda-toggle {
@@ -1038,8 +1040,12 @@ tbody tr:last-child td {
   flex-wrap: wrap;
 }
 .agenda-actions > .button-row {
+  flex: 1 1 280px;
   margin: 0;
   gap: 3px;
+}
+.agenda-actions > .button-row:last-child {
+  justify-content: flex-end;
 }
 .inline-editor {
   display: flex;
@@ -1456,6 +1462,25 @@ tbody tr:last-child td {
   }
   .agenda-heading > span {
     font-size: 10px;
+  }
+  .attendance-person {
+    grid-template-columns: 24px minmax(0, 1fr) 32px;
+    align-items: start;
+  }
+  .attendance-person > .person-status {
+    grid-column: 2;
+    grid-row: 2;
+    overflow-wrap: anywhere;
+  }
+  .attendance-person > .ui-button:last-child {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+  .agenda-actions > .button-row {
+    flex-basis: 100%;
+  }
+  .agenda-actions > .button-row:last-child {
+    justify-content: flex-start;
   }
   .agenda-toggle h2 {
     font-size: 16px;

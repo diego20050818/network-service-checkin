@@ -359,7 +359,7 @@ function ShiftAgenda({
                       </small>
                     </div>
                     <span
-                      className={
+                      className={`person-status ${
                         already
                           ? "success-text"
                           : exempt
@@ -367,7 +367,7 @@ function ShiftAgenda({
                             : phase === "ended"
                               ? "danger-text"
                               : "muted-value"
-                      }
+                      }`}
                     >
                       {already
                         ? `已签到 ${slot.punchTime ? new Date(slot.punchTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }) : ""}`
