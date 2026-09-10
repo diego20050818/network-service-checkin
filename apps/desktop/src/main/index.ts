@@ -150,6 +150,12 @@ async function createWindow(): Promise<void> {
     show: false,
     backgroundColor: "#F7F6F2",
     autoHideMenuBar: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#F7F6F2",
+      symbolColor: "#292824",
+      height: 52,
+    },
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,

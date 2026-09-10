@@ -1,6 +1,6 @@
 {
   "name": "@network-service/checkin-desktop",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
   "author": "网络服务小组",
   "description": "网络服务小组签到与月报桌面应用",
@@ -79,6 +79,7 @@
       }
     ],
     "win": {
+      "icon": "src/renderer/assets/jnu-emblem.svg",
       "target": [
         {
           "target": "nsis",

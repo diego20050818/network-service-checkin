@@ -4,11 +4,11 @@
 
 ```
 平台     Windows 10/11 x64（NSIS 安装包）        运行时    Electron + React + TypeScript
-本地存储  SQLite                             版本      0.6.3
+本地存储  SQLite                             版本      0.6.4
 协议     MIT 开源
 ```
 
-0.6.3 已完成响应式布局、可配置班次时段、考勤状态色、15 分钟未签到提醒与细节动效。安装包和更新校验文件由 GitHub Release 提供；测试证据、截图及尚未覆盖的生产环境检查见 [发布验证报告](docs/v0.6.3-release-validation.md)。
+0.6.4 已将 Windows 系统标题栏改为与工作区融合的无边框顶栏，保留原生窗口按钮、拖拽与双击最大化；Windows 应用、任务栏、开始菜单和安装器图标统一使用本地暨南大学校徽。验证范围和仍需实机确认的边界见 [v0.6.4 发布验证报告](docs/v0.6.4-release-validation.md)。
 
 ---
 
@@ -214,15 +214,15 @@ output/                程序与脚本导出的文件（git 忽略）
 
 ## 版本与发布
 
-版本遵循 **语义化版本**；当前为 `0.6.3`。发布流程：
+版本遵循 **语义化版本**；当前为 `0.6.4`。发布流程：
 
 1. `npm.cmd run verify` 通过全部门禁。
 2. `npm.cmd run package:win` 生成 x64 NSIS 安装包。
 3. 打标签并推送：
 
    ```powershell
-   git tag -a v0.5.1 -m "v0.5.1"
-   git push origin v0.5.1
+   git tag -a v0.6.4 -m "v0.6.4"
+   git push origin v0.6.4
    ```
 
 4. 在 GitHub Release 同时上传 `.exe`、`.blockmap` 和 `latest.yml`，可选附带手册 PDF。
@@ -233,25 +233,25 @@ output/                程序与脚本导出的文件（git 忽略）
 
 ## Release 发布指南
 
-发布新版本（以当前 `0.6.3` 为例）：
+发布新版本（以当前 `0.6.4` 为例）：
 
 1. **门禁**：`npm.cmd run verify`（typecheck + test + build）全通过。
 2. **打包**：`npm.cmd run package:win` 生成安装包、`.blockmap` 与 `latest.yml`，并校验元数据中的版本、文件名和 SHA-512。
 3. **打标签并推送**：
 
    ```powershell
-   git tag -a v0.5.1 -m "v0.5.1"
-   git push origin v0.5.1
+   git tag -a v0.6.4 -m "v0.6.4"
+   git push origin v0.6.4
    ```
 
-4. **建 Release**：标题使用 `v0.5.1`；附件必须带 `.exe`、`.blockmap` 与 `latest.yml`，否则客户端无法自动更新。
+4. **建 Release**：标题使用 `v0.6.4`；附件必须带 `.exe`、`.blockmap` 与 `latest.yml`，否则客户端无法自动更新。
 
 命令行方式（已登录 `gh`）：
 
 ```powershell
-gh release create v0.5.1 -t "v0.5.1" -n "见 CHANGELOG.md" `
-  "apps/desktop/release/network-service-checkin-0.5.1-x64.exe" `
-  "apps/desktop/release/network-service-checkin-0.5.1-x64.exe.blockmap" `
+gh release create v0.6.4 -t "v0.6.4" -n "见 CHANGELOG.md" `
+  "apps/desktop/release/network-service-checkin-0.6.4-x64.exe" `
+  "apps/desktop/release/network-service-checkin-0.6.4-x64.exe.blockmap" `
   "apps/desktop/release/latest.yml"
 ```
 

@@ -229,7 +229,7 @@ function Workspace() {
           <footer>
             <span className="local-state">
               <i />
-              本地数据 · v{data?.updateState.currentVersion ?? "0.6.3"}
+              本地数据 · v{data?.updateState.currentVersion ?? "0.6.4"}
             </span>
             <AppButton
               variant="quiet"
